@@ -12,7 +12,7 @@ clean:
 
 install: build
 	mkdir -p ~/.gerbil/bin
-	cp .gerbil/bin/gerbil-lsp ~/.gerbil/bin/
+	sudo cp .gerbil/bin/gerbil-lsp /usr/local/bin/
 
 test: build
 	@export GERBIL_PATH=$(CURDIR)/.gerbil; \
