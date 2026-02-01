@@ -3,6 +3,7 @@
 (import :std/sugar
         ../util/log
         ../util/position
+        ../util/string
         ../types
         ../state
         ../analysis/document)
@@ -30,23 +31,24 @@
 ;;; Format Gerbil source preserving comments and blank lines.
 ;;; Strategy: identify regions that are comments/blank lines vs S-expressions.
 ;;; Only pretty-print the S-expression regions; pass comments through unchanged.
+;;; Lines with inline comments (code followed by ;) are also passed through.
 (def (format-gerbil-source text)
   (with-catch
     (lambda (e)
       (lsp-debug "formatting error: ~a" e)
       #f)
     (lambda ()
-      (let ((lines (string-split-newline text))
+      (let ((lines (string-split-lines text))
             (out (open-output-string)))
         (let loop ((ls lines) (first? #t) (form-lines '()))
           (cond
-            ;; End of input — flush any accumulated form lines
+            ;; End of input -- flush any accumulated form lines
             ((null? ls)
              (when (pair? form-lines)
                (unless first? (newline out))
                (format-form-lines (reverse form-lines) out))
              (get-output-string out))
-            ;; Comment line or blank line — flush form, emit as-is
+            ;; Comment line or blank line -- flush form, emit as-is
             ((or (comment-line? (car ls))
                  (blank-line? (car ls)))
              ;; Flush any accumulated form
@@ -58,7 +60,17 @@
                (newline out))
              (display (car ls) out)
              (loop (cdr ls) #f '()))
-            ;; Code line — accumulate for formatting
+            ;; Inline comment (code followed by ;) -- pass through unchanged
+            ((inline-comment-line? (car ls))
+             (when (pair? form-lines)
+               (unless first? (newline out))
+               (format-form-lines (reverse form-lines) out)
+               (set! form-lines '()))
+             (unless (and first? (null? form-lines))
+               (newline out))
+             (display (car ls) out)
+             (loop (cdr ls) #f '()))
+            ;; Code line -- accumulate for formatting
             (else
              (loop (cdr ls) first? (cons (car ls) form-lines)))))))))
 
@@ -95,25 +107,30 @@
       ((char-whitespace-simple? (string-ref line i)) (loop (+ i 1)))
       (else #f))))
 
+;;; Check if a line has code followed by an inline comment
+;;; Detects ; outside of string literals after non-whitespace content
+(def (inline-comment-line? line)
+  (let ((len (string-length line)))
+    (let loop ((i 0) (in-string? #f) (seen-code? #f))
+      (cond
+        ((>= i len) #f)
+        ;; Toggle string state on unescaped double-quote
+        ((char=? (string-ref line i) #\")
+         (loop (+ i 1) (not in-string?) #t))
+        ;; Skip escaped characters inside strings
+        ((and in-string? (char=? (string-ref line i) #\\) (< (+ i 1) len))
+         (loop (+ i 2) in-string? seen-code?))
+        ;; Semicolon outside string after code = inline comment
+        ((and (not in-string?) seen-code? (char=? (string-ref line i) #\;))
+         #t)
+        ;; Track whether we've seen non-whitespace (code)
+        ((and (not in-string?) (not (char-whitespace-simple? (string-ref line i))))
+         (loop (+ i 1) in-string? #t))
+        (else
+         (loop (+ i 1) in-string? seen-code?))))))
+
 (def (char-whitespace-simple? c)
   (or (char=? c #\space) (char=? c #\tab) (char=? c #\return)))
-
-;;; Split text on newlines
-(def (string-split-newline text)
-  (let loop ((i 0) (start 0) (result '()))
-    (cond
-      ((>= i (string-length text))
-       (reverse (cons (substring text start i) result)))
-      ((char=? (string-ref text i) #\newline)
-       (loop (+ i 1) (+ i 1) (cons (substring text start i) result)))
-      (else (loop (+ i 1) start result)))))
-
-;;; Join lines with newlines
-(def (string-join-newline lines)
-  (if (null? lines) ""
-    (let loop ((rest (cdr lines)) (acc (car lines)))
-      (if (null? rest) acc
-        (loop (cdr rest) (string-append acc "\n" (car rest)))))))
 
 ;;; Count the number of lines in text (0-based last line number)
 (def (count-lines text)

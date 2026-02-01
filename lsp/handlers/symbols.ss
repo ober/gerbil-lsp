@@ -4,6 +4,7 @@
         :std/iter
         ../util/log
         ../util/position
+        ../util/string
         ../types
         ../state
         ../analysis/document
@@ -57,20 +58,3 @@
       (make-lsp-range (sym-info-line s) (sym-info-col s)
                       (sym-info-end-line s) (sym-info-end-col s)))))
 
-;;; Case-insensitive substring search
-(def (string-contains-ci haystack needle)
-  (let ((h (string-downcase haystack))
-        (n (string-downcase needle)))
-    (let ((hlen (string-length h))
-          (nlen (string-length n)))
-      (let loop ((i 0))
-        (cond
-          ((> (+ i nlen) hlen) #f)
-          ((string=? n (substring h i (+ i nlen))) #t)
-          (else (loop (+ i 1))))))))
-
-;;; Take at most N elements from a list
-(def (take-at-most lst n)
-  (if (or (null? lst) (<= n 0))
-    '()
-    (cons (car lst) (take-at-most (cdr lst) (- n 1)))))

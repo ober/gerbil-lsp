@@ -68,9 +68,25 @@
         ((pair? target)
          (let ((name (car target)))
            (if (symbol? name)
-             (list (make-sym-info (symbol->string name)
-                                  SymbolKind.Function line col end-line end-col
-                                  (format-def-signature target)))
+             (let* ((params (extract-param-names (cdr target)))
+                    (body (cddr form))
+                    (locals (extract-local-bindings body))
+                    (main-sym (make-sym-info (symbol->string name)
+                                SymbolKind.Function line col end-line end-col
+                                (format-def-signature target)))
+                    (param-syms
+                      (map (lambda (p)
+                             (make-sym-info (symbol->string p)
+                               SymbolKind.Variable line col end-line end-col
+                               "parameter"))
+                           params))
+                    (local-syms
+                      (map (lambda (l)
+                             (make-sym-info (symbol->string l)
+                               SymbolKind.Variable line col end-line end-col
+                               "local"))
+                           locals)))
+               (cons main-sym (append param-syms local-syms)))
              '())))
         ;; (def name expr)
         ((symbol? target)
@@ -249,3 +265,110 @@
            (string-append " " (format-args (cdr args)))
            (format " . ~a" (cdr args))))))
     (else (format "~a" args))))
+
+;;; Extract parameter names from a lambda parameter list
+;;; Handles proper lists, dotted pairs (rest args), and keyword args
+(def (extract-param-names params)
+  (cond
+    ((null? params) '())
+    ((symbol? params) (list params))  ; rest parameter
+    ((pair? params)
+     (let ((head (car params)))
+       (cond
+         ((symbol? head)
+          ;; Skip keyword symbols (foo: bar)
+          (if (keyword? head)
+            (if (pair? (cdr params))
+              (extract-param-names (cddr params))  ; skip keyword + value
+              '())
+            (cons head (extract-param-names (cdr params)))))
+         ;; Destructuring pattern like ((x y) ...)
+         ((pair? head)
+          (append (extract-param-names head)
+                  (extract-param-names (cdr params))))
+         (else (extract-param-names (cdr params))))))
+    (else '())))
+
+;;; Extract locally bound names from let/let*/letrec/lambda bodies
+;;; Walks the body forms recursively to find binding constructs
+(def (extract-local-bindings body)
+  (let ((result '()))
+    (define (walk forms)
+      (for-each walk-form forms))
+    (define (walk-form form)
+      (when (pair? form)
+        (let ((head (car form)))
+          (cond
+            ;; (let/let*/letrec ((name expr) ...) body...)
+            ((memq head '(let let* letrec letrec*))
+             (let ((bindings (if (and (pair? (cdr form))
+                                     (pair? (cadr form)))
+                               ;; Regular let
+                               (cadr form)
+                               ;; Named let: (let name ((var init) ...) body)
+                               (if (and (pair? (cdr form))
+                                        (symbol? (cadr form))
+                                        (pair? (cddr form))
+                                        (pair? (caddr form)))
+                                 (begin
+                                   (set! result (cons (cadr form) result))
+                                   (caddr form))
+                                 '()))))
+               (when (pair? bindings)
+                 (for-each
+                   (lambda (b)
+                     (when (and (pair? b) (symbol? (car b)))
+                       (set! result (cons (car b) result))))
+                   bindings))
+               ;; Walk the body
+               (let ((body-start (if (and (pair? (cdr form))
+                                          (symbol? (cadr form)))
+                                   (cdddr form)  ; named let
+                                   (cddr form)))) ; regular let
+                 (when (pair? body-start)
+                   (walk body-start)))))
+            ;; (let-values (((names...) expr) ...) body...)
+            ((memq head '(let-values let*-values))
+             (when (and (pair? (cdr form)) (pair? (cadr form)))
+               (for-each
+                 (lambda (b)
+                   (when (and (pair? b) (pair? (car b)))
+                     (for-each
+                       (lambda (n) (when (symbol? n)
+                                     (set! result (cons n result))))
+                       (car b))))
+                 (cadr form))
+               (when (pair? (cddr form))
+                 (walk (cddr form)))))
+            ;; (lambda args body...) -- extract param names
+            ((memq head '(lambda))
+             (when (pair? (cdr form))
+               (let ((params (extract-param-names (cadr form))))
+                 (for-each (lambda (p) (set! result (cons p result))) params))
+               (when (pair? (cddr form))
+                 (walk (cddr form)))))
+            ;; (receive (names...) expr body...)
+            ((eq? head 'receive)
+             (when (and (pair? (cdr form)) (pair? (cadr form)))
+               (for-each
+                 (lambda (n) (when (symbol? n)
+                               (set! result (cons n result))))
+                 (cadr form))
+               (when (pair? (cddr form))
+                 (walk (cddr form)))))
+            ;; For other forms, walk all subforms
+            (else
+             (for-each
+               (lambda (sub) (when (pair? sub) (walk-form sub)))
+               (cdr form)))))))
+    (walk body)
+    ;; Remove duplicates
+    (let ((seen (make-hash-table))
+          (unique '()))
+      (for-each
+        (lambda (s)
+          (unless (hash-key? seen s)
+            (hash-put! seen s #t)
+            (set! unique (cons s unique))))
+        result)
+      (reverse unique))))

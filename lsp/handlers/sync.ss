@@ -76,8 +76,9 @@
     (set-file-symbols! uri syms)
     (lsp-debug "analyzed ~a: ~a symbols" uri (length syms))))
 
-;;; Get the last element of a list
+;;; Get the last element of a list (returns #f for empty list)
 (def (last lst)
-  (if (null? (cdr lst))
-    (car lst)
-    (last (cdr lst))))
+  (cond
+    ((null? lst) #f)
+    ((null? (cdr lst)) (car lst))
+    (else (last (cdr lst)))))

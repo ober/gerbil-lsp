@@ -5,10 +5,12 @@
         :std/misc/ports
         ../util/log
         ../util/position
+        ../util/string
         ../state
         ./document
         ./parser
-        ./symbols)
+        ./symbols
+        ./module)
 (export #t)
 
 ;;; Index all .ss files in the workspace
@@ -28,7 +30,7 @@
 
 ;;; Index a single file by its filesystem path
 (def (index-file-by-path! path)
-  (let* ((uri (string-append "file://" path))
+  (let* ((uri (path->uri path))
          (text (read-file-string path))
          (forms (parse-source text))
          (syms (extract-symbols forms)))
@@ -63,23 +65,6 @@
                   (scan-directory full-path proc))
                 (proc full-path))))
           entries)))))
-
-;;; Check if a string ends with a suffix
-(def (string-suffix? suffix str)
-  (let ((slen (string-length suffix))
-        (len (string-length str)))
-    (and (>= len slen)
-         (string=? suffix (substring str (- len slen) len)))))
-
-;;; Check if a string contains a substring
-(def (string-contains haystack needle)
-  (let ((hlen (string-length haystack))
-        (nlen (string-length needle)))
-    (let loop ((i 0))
-      (cond
-        ((> (+ i nlen) hlen) #f)
-        ((string=? needle (substring haystack i (+ i nlen))) #t)
-        (else (loop (+ i 1)))))))
 
 ;;; Check if a path is a directory
 (def (file-directory? path)
@@ -151,13 +136,3 @@
           (callback i))
         (loop (+ i 1))))))
 
-;;; Split text into lines
-(def (string-split-lines text)
-  (let loop ((i 0) (start 0) (lines '()))
-    (cond
-      ((>= i (string-length text))
-       (reverse (cons (substring text start i) lines)))
-      ((char=? (string-ref text i) #\newline)
-       (loop (+ i 1) (+ i 1) (cons (substring text start i) lines)))
-      (else
-       (loop (+ i 1) start lines)))))

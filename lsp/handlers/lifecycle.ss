@@ -1,11 +1,13 @@
 ;;; -*- Gerbil -*-
 ;;; LSP lifecycle handlers: initialize, initialized, shutdown, exit
 (import :std/sugar
+        :std/format
         ../util/log
         ../jsonrpc
         ../types
         ../capabilities
         ../state
+        ../server
         ../analysis/index
         ../analysis/module)
 (export #t)
@@ -36,11 +38,16 @@
   ;; Index all .ss files in the workspace for symbols
   (let ((root (workspace-root)))
     (when root
+      (send-log-message! MessageType.Info
+        (format "Indexing workspace: ~a" root))
       (with-catch
         (lambda (e)
-          (lsp-warn "workspace indexing failed: ~a" e))
+          (lsp-warn "workspace indexing failed: ~a" e)
+          (send-log-message! MessageType.Error
+            (format "Workspace indexing failed: ~a" e)))
         (lambda ()
-          (index-workspace! root)))))
+          (index-workspace! root)
+          (send-log-message! MessageType.Info "Workspace indexing complete")))))
   (void))
 
 ;;; Handle "shutdown" request
@@ -54,5 +61,6 @@
 ;;; Terminate the process
 (def (handle-exit params)
   (lsp-info "exiting")
+  (force-output (current-output-port))
   (exit (if (shutdown-requested?) 0 1)))
 

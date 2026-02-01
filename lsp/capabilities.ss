@@ -32,4 +32,15 @@
     ("documentFormattingProvider" #t)
     ;; Signature help
     ("signatureHelpProvider"
-     (hash ("triggerCharacters" [" " "("])))))
+     (hash ("triggerCharacters" [" " "("])))
+    ;; Code actions
+    ("codeActionProvider" #t)
+    ;; Document highlight
+    ("documentHighlightProvider" #t)
+    ;; Folding ranges
+    ("foldingRangeProvider" #t)
+    ;; Selection ranges
+    ("selectionRangeProvider" #t)
+    ;; Document links
+    ("documentLinkProvider"
+     (hash ("resolveProvider" #f)))))

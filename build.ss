@@ -5,6 +5,7 @@
 (defbuild-script
   '("lsp/util/log"
     "lsp/util/position"
+    "lsp/util/string"
     "lsp/transport"
     "lsp/jsonrpc"
     "lsp/types"
@@ -27,5 +28,11 @@
     "lsp/handlers/rename"
     "lsp/handlers/formatting"
     "lsp/handlers/signature"
+    "lsp/handlers/code-action"
+    "lsp/handlers/configuration"
+    "lsp/handlers/highlight"
+    "lsp/handlers/folding"
+    "lsp/handlers/selection"
+    "lsp/handlers/links"
     "lsp/server"
     (exe: "lsp/main" bin: "gerbil-lsp")))

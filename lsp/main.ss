@@ -14,7 +14,13 @@
         ./handlers/symbols
         ./handlers/rename
         ./handlers/formatting
-        ./handlers/signature)
+        ./handlers/signature
+        ./handlers/code-action
+        ./handlers/configuration
+        ./handlers/highlight
+        ./handlers/folding
+        ./handlers/selection
+        ./handlers/links)
 (export main)
 
 (def (main . args)
@@ -47,11 +53,17 @@
   (register-notification-handler! "initialized" handle-initialized)
   (register-request-handler! "shutdown" handle-shutdown)
   (register-notification-handler! "exit" handle-exit)
+  ;; Protocol
+  (register-notification-handler! "$/cancelRequest"
+    (lambda (params) (lsp-debug "cancelRequest ignored (single-threaded)")))
   ;; Document sync
   (register-notification-handler! "textDocument/didOpen" handle-did-open)
   (register-notification-handler! "textDocument/didChange" handle-did-change)
   (register-notification-handler! "textDocument/didClose" handle-did-close)
   (register-notification-handler! "textDocument/didSave" handle-did-save)
+  ;; Workspace
+  (register-notification-handler! "workspace/didChangeConfiguration"
+    handle-did-change-configuration)
   ;; Language features
   (register-request-handler! "textDocument/completion" handle-completion)
   (register-request-handler! "textDocument/hover" handle-hover)
@@ -63,4 +75,9 @@
   (register-request-handler! "textDocument/rename" handle-rename)
   (register-request-handler! "textDocument/formatting" handle-formatting)
   (register-request-handler! "textDocument/signatureHelp" handle-signature-help)
+  (register-request-handler! "textDocument/codeAction" handle-code-action)
+  (register-request-handler! "textDocument/documentHighlight" handle-document-highlight)
+  (register-request-handler! "textDocument/foldingRange" handle-folding-range)
+  (register-request-handler! "textDocument/selectionRange" handle-selection-range)
+  (register-request-handler! "textDocument/documentLink" handle-document-link)
   (lsp-info "all handlers registered"))

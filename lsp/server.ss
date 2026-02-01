@@ -32,6 +32,17 @@
     (let ((msg (make-notification method params)))
       (write-message *output-port* msg))))
 
+;;; LSP MessageType constants
+(def MessageType.Error   1)
+(def MessageType.Warning 2)
+(def MessageType.Info    3)
+(def MessageType.Log     4)
+
+;;; Send a window/logMessage notification to the client
+(def (send-log-message! type message)
+  (send-notification! "window/logMessage"
+    (hash ("type" type) ("message" message))))
+
 ;;; Main server loop — reads from stdin, dispatches, writes to stdout
 (def (start-server (input-port (current-input-port))
                    (output-port (current-output-port)))
@@ -68,39 +79,57 @@
        (lsp-warn "unexpected message type: ~a" json-str)))))
 
 ;;; Handle a request — dispatch and send response
+;;; Guards: reject if not initialized (except "initialize") or if shutdown requested
 (def (handle-request msg output-port)
   (let ((id (jsonrpc-id msg))
         (method (jsonrpc-method msg))
         (params (jsonrpc-params msg)))
     (lsp-debug "request: ~a (id=~a)" method id)
-    (let ((handler (hash-ref *request-handlers* method #f)))
-      (if handler
-        (with-catch
-          (lambda (e)
-            (lsp-error "handler error for ~a: ~a" method e)
-            (write-message output-port
-              (make-error-response id INTERNAL-ERROR
-                (format "Internal error: ~a" e))))
-          (lambda ()
-            (let ((result (handler params)))
-              (write-message output-port
-                (make-response id result)))))
-        (begin
-          (lsp-warn "no handler for request: ~a" method)
-          (write-message output-port
-            (make-error-response id METHOD-NOT-FOUND
-              (string-append "Method not found: " method))))))))
+    (cond
+      ;; After shutdown, reject all requests
+      ((shutdown-requested?)
+       (lsp-warn "request after shutdown: ~a" method)
+       (write-message output-port
+         (make-error-response id INVALID-REQUEST "Server is shutting down")))
+      ;; Before initialization, only "initialize" is allowed
+      ((and (not (server-initialized?))
+            (not (string=? method "initialize")))
+       (lsp-warn "request before initialize: ~a" method)
+       (write-message output-port
+         (make-error-response id SERVER-NOT-INITIALIZED "Server not initialized")))
+      ;; Normal dispatch
+      (else
+       (let ((handler (hash-ref *request-handlers* method #f)))
+         (if handler
+           (with-catch
+             (lambda (e)
+               (lsp-error "handler error for ~a: ~a" method e)
+               (write-message output-port
+                 (make-error-response id INTERNAL-ERROR
+                   (format "Internal error: ~a" e))))
+             (lambda ()
+               (let ((result (handler params)))
+                 (write-message output-port
+                   (make-response id result)))))
+           (begin
+             (lsp-warn "no handler for request: ~a" method)
+             (write-message output-port
+               (make-error-response id METHOD-NOT-FOUND
+                 (string-append "Method not found: " method))))))))))
 
 ;;; Handle a notification — dispatch, no response
+;;; After shutdown, only "exit" is processed; all others are ignored
 (def (handle-notification msg)
   (let ((method (jsonrpc-method msg))
         (params (jsonrpc-params msg)))
     (lsp-debug "notification: ~a" method)
-    (let ((handler (hash-ref *notification-handlers* method #f)))
-      (if handler
-        (with-catch
-          (lambda (e)
-            (lsp-error "handler error for ~a: ~a" method e))
-          (lambda ()
-            (handler params)))
-        (lsp-debug "no handler for notification: ~a" method)))))
+    (if (and (shutdown-requested?) (not (string=? method "exit")))
+      (lsp-debug "ignoring notification after shutdown: ~a" method)
+      (let ((handler (hash-ref *notification-handlers* method #f)))
+        (if handler
+          (with-catch
+            (lambda (e)
+              (lsp-error "handler error for ~a: ~a" method e))
+            (lambda ()
+              (handler params)))
+          (lsp-debug "no handler for notification: ~a" method))))))

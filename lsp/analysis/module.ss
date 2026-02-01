@@ -121,9 +121,43 @@
     (uri-decode (substring uri 7 (string-length uri)))
     uri))
 
-;;; Convert a filesystem path to a file URI
+;;; Convert a filesystem path to a file URI with percent-encoding
 (def (path->uri path)
-  (string-append "file://" path))
+  (string-append "file://" (uri-encode-path path)))
+
+;;; URI percent-encode a path (RFC 3986 unreserved chars + / are kept)
+(def (uri-encode-path path)
+  (let ((out (open-output-string)))
+    (let loop ((i 0))
+      (if (>= i (string-length path))
+        (get-output-string out)
+        (let ((c (string-ref path i)))
+          (if (uri-unreserved-or-slash? c)
+            (begin (write-char c out) (loop (+ i 1)))
+            ;; Percent-encode each byte of the UTF-8 encoding
+            (let ((bytes (string->bytes (string c))))
+              (let bloop ((j 0))
+                (when (< j (u8vector-length bytes))
+                  (let ((b (u8vector-ref bytes j)))
+                    (display "%" out)
+                    (display (hex-byte b) out)
+                    (bloop (+ j 1)))))
+              (loop (+ i 1)))))))))
+
+;;; RFC 3986 unreserved characters plus /
+(def (uri-unreserved-or-slash? c)
+  (or (char-alphabetic? c)
+      (char-numeric? c)
+      (memv c '(#\- #\_ #\. #\~ #\/))))
+
+;;; Format a byte as two uppercase hex digits
+(def (hex-byte b)
+  (let ((hi (arithmetic-shift b -4))
+        (lo (bitwise-and b #xF)))
+    (string (hex-digit hi) (hex-digit lo))))
+
+(def (hex-digit n)
+  (string-ref "0123456789ABCDEF" n))
 
 ;;; Basic URI percent-decoding (%20 → space, etc.)
 (def (uri-decode str)

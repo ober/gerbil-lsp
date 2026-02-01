@@ -10,16 +10,19 @@
 
 ;; Read one LSP message from port.
 ;; Returns the JSON string, or #f on EOF.
+;; Content-Length is in bytes (UTF-8), so we read raw bytes
+;; and decode to a string.
 (def (read-message port)
   (let ((content-length (read-headers port)))
     (if content-length
-      (let ((body (read-string content-length port)))
-        (if (and (string? body) (= (string-length body) content-length))
-          (begin
+      (let* ((buf (make-u8vector content-length 0))
+             (n (read-subu8vector buf 0 content-length port)))
+        (if (= n content-length)
+          (let ((body (bytes->string buf)))
             (lsp-debug "recv: ~a" body)
             body)
           (begin
-            (lsp-error "incomplete read: expected ~a bytes" content-length)
+            (lsp-error "incomplete read: expected ~a bytes, got ~a" content-length n)
             #f)))
       #f)))
 
@@ -59,13 +62,17 @@
         (else (loop content-length))))))
 
 ;; Write one LSP message to port.
-;; Content-Length must be the byte count of the UTF-8 body.
-;; We compute via string->bytes (UTF-8) and rely on the output port
-;; using the same encoding for write-string.
+;; Content-Length is the byte count of the UTF-8 body.
+;; We write raw bytes for both header and body to avoid
+;; encoding mismatches from port settings.
 (def (write-message port json-string)
   (let* ((body-bytes (string->bytes json-string))
-         (content-length (u8vector-length body-bytes)))
+         (content-length (u8vector-length body-bytes))
+         (header (string-append "Content-Length: "
+                                (number->string content-length)
+                                "\r\n\r\n"))
+         (header-bytes (string->bytes header)))
     (lsp-debug "send: ~a" json-string)
-    (fprintf port "Content-Length: ~a\r\n\r\n" content-length)
-    (write-string json-string port)
+    (write-subu8vector header-bytes 0 (u8vector-length header-bytes) port)
+    (write-subu8vector body-bytes 0 content-length port)
     (force-output port)))

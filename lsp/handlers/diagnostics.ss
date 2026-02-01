@@ -6,6 +6,7 @@
         :std/misc/string
         ../util/log
         ../util/position
+        ../util/string
         ../types
         ../state
         ../server
@@ -53,30 +54,26 @@
 
 ;;; Quick parse diagnostics — try to read the file as S-expressions
 (def (parse-diagnostics text)
-  (let ((port (open-input-string text))
-        (diags '()))
-    (let loop ()
+  (let ((port (open-input-string text)))
+    (let loop ((diags '()))
       (with-catch
         (lambda (e)
           (let ((msg (error-message e)))
             (let-values (((line col) (error-line-col e)))
               (let ((l (or line 0))
                     (c (or col 0)))
-                (set! diags
-                  (cons (make-diagnostic
-                          (make-lsp-range l c l (+ c 1))
-                          (or msg (format "~a" e))
-                          severity: DiagnosticSeverity.Error
-                          source: "gerbil-lsp/parse")
-                        diags)))))
-          ;; Don't try to continue after parse error
-          diags)
+                ;; Don't try to continue after parse error
+                (cons (make-diagnostic
+                        (make-lsp-range l c l (+ c 1))
+                        (or msg (format "~a" e))
+                        severity: DiagnosticSeverity.Error
+                        source: "gerbil-lsp/parse")
+                      diags)))))
         (lambda ()
           (let ((form (read port)))
             (if (eof-object? form)
               diags
-              (loop))))))
-    diags))
+              (loop diags))))))))
 
 ;;; Extract error message from an exception
 (def (error-message e)
@@ -142,7 +139,7 @@
 
 ;;; Parse gxc error output into diagnostics
 (def (parse-gxc-output output file-path)
-  (let ((lines (split-lines output))
+  (let ((lines (string-split-lines output))
         (diags '()))
     (for-each
       (lambda (line)
@@ -200,20 +197,3 @@
        (loop (+ i 1) (+ i 1) (cons (substring str start i) parts)))
       (else (loop (+ i 1) start parts)))))
 
-;;; Join strings with separator
-(def (string-join strs sep)
-  (if (null? strs) ""
-    (let loop ((rest (cdr strs)) (acc (car strs)))
-      (if (null? rest) acc
-        (loop (cdr rest) (string-append acc sep (car rest)))))))
-
-;;; Split a string into lines
-(def (split-lines text)
-  (let loop ((i 0) (start 0) (lines '()))
-    (cond
-      ((>= i (string-length text))
-       (reverse (cons (substring text start i) lines)))
-      ((char=? (string-ref text i) #\newline)
-       (loop (+ i 1) (+ i 1) (cons (substring text start i) lines)))
-      (else
-       (loop (+ i 1) start lines)))))
