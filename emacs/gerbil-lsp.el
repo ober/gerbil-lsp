@@ -46,7 +46,7 @@ One of: debug, info, warn, error."
                  (const "error"))
   :group 'gerbil-lsp)
 
-(defun gerbil-lsp--server-command ()
+(defun gerbil-lsp--server-command (&rest _args)
   "Return the command to start the gerbil-lsp server."
   (list gerbil-lsp-server-path
         "--stdio"

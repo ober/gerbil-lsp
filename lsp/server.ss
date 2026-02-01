@@ -47,6 +47,9 @@
 (def (start-server (input-port (current-input-port))
                    (output-port (current-output-port)))
   (set! *output-port* output-port)
+  ;; Disable buffering on input port so that read-line (character I/O)
+  ;; and read-subu8vector (byte I/O) can safely interleave in transport.
+  (port-settings-set! input-port '(buffering: #f))
   (lsp-info "gerbil-lsp server starting")
   (let loop ()
     (let ((json-str (read-message input-port)))
