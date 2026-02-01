@@ -148,3 +148,54 @@
       ((< i 0) len)
       ((char=? (string-ref text i) #\newline) len)
       (else (loop (- i 1) (+ len 1))))))
+
+;;; Handle textDocument/rangeFormatting
+;;; Formats only the lines within the specified range
+(def (handle-range-formatting params)
+  (let* ((td (hash-ref params "textDocument" (hash)))
+         (uri (hash-ref td "uri" ""))
+         (range (hash-ref params "range" (hash)))
+         (start (hash-ref range "start" (hash)))
+         (end (hash-ref range "end" (hash)))
+         (start-line (hash-ref start "line" 0))
+         (end-line (hash-ref end "line" 0))
+         (doc (get-document uri)))
+    (if doc
+      (let* ((text (document-text doc))
+             (lines (string-split-lines text))
+             (total-lines (length lines)))
+        ;; Clamp range to valid lines
+        (let* ((sl (max 0 (min start-line (- total-lines 1))))
+               (el (max sl (min end-line (- total-lines 1))))
+               ;; Extract range lines
+               (range-lines (take-lines lines sl el))
+               (range-text (string-join-newline range-lines))
+               (formatted (format-gerbil-source range-text)))
+          (if (and formatted (not (string=? formatted range-text)))
+            ;; Compute end col of the last line in range
+            (let ((end-line-text (list-ref lines el)))
+              (vector
+                (make-text-edit
+                  (make-lsp-range sl 0 el (string-length end-line-text))
+                  formatted)))
+            [])))
+      [])))
+
+;;; Extract lines from start to end (inclusive), 0-based
+(def (take-lines lines start end)
+  (let loop ((ls lines) (i 0) (result '()))
+    (cond
+      ((null? ls) (reverse result))
+      ((> i end) (reverse result))
+      ((>= i start)
+       (loop (cdr ls) (+ i 1) (cons (car ls) result)))
+      (else
+       (loop (cdr ls) (+ i 1) result)))))
+
+;;; Safe list-ref that returns "" for out-of-bounds
+(def (list-ref lst n)
+  (let loop ((l lst) (i 0))
+    (cond
+      ((null? l) "")
+      ((= i n) (car l))
+      (else (loop (cdr l) (+ i 1))))))

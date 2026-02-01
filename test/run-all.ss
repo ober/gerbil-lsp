@@ -5,6 +5,13 @@
 (import :std/misc/process
         :std/format)
 
+;; Ensure subprocesses find the local project build
+(let ((gp (getenv "GERBIL_PATH" #f)))
+  (unless gp
+    (let ((local-gerbil (path-expand ".gerbil" (current-directory))))
+      (when (file-exists? local-gerbil)
+        (setenv "GERBIL_PATH" local-gerbil)))))
+
 (def *test-files*
   '("test/string-test.ss"
     "test/position-test.ss"
@@ -21,7 +28,19 @@
     "test/highlight-test.ss"
     "test/capabilities-test.ss"
     "test/state-test.ss"
-    "test/sync-test.ss"))
+    "test/sync-test.ss"
+    "test/hover-test.ss"
+    "test/definition-test.ss"
+    "test/references-test.ss"
+    "test/rename-test.ss"
+    "test/completion-test.ss"
+    "test/signature-test.ss"
+    "test/folding-test.ss"
+    "test/selection-test.ss"
+    "test/links-test.ss"
+    "test/index-test.ss"
+    "test/semantic-tokens-test.ss"
+    "test/inlay-hints-test.ss"))
 
 (def (run-all-tests)
   (let ((failed '())

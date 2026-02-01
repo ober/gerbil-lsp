@@ -3,6 +3,13 @@
 (import ./types)
 (export #t)
 
+;;; Semantic token legend (must match indices in semantic-tokens.ss)
+(def *capability-token-types*
+  ["keyword" "function" "variable" "parameter" "type"
+   "macro" "comment" "string" "number" "operator"])
+(def *capability-token-modifiers*
+  ["definition" "readonly"])
+
 ;; Returns the ServerCapabilities object for the initialize response
 (def (server-capabilities)
   (hash
@@ -30,11 +37,15 @@
      (hash ("prepareProvider" #t)))
     ;; Formatting
     ("documentFormattingProvider" #t)
+    ;; Range formatting
+    ("documentRangeFormattingProvider" #t)
     ;; Signature help
     ("signatureHelpProvider"
      (hash ("triggerCharacters" [" " "("])))
     ;; Code actions
-    ("codeActionProvider" #t)
+    ("codeActionProvider"
+     (hash ("codeActionKinds"
+            ["quickfix" "source.organizeImports"])))
     ;; Document highlight
     ("documentHighlightProvider" #t)
     ;; Folding ranges
@@ -43,4 +54,12 @@
     ("selectionRangeProvider" #t)
     ;; Document links
     ("documentLinkProvider"
-     (hash ("resolveProvider" #f)))))
+     (hash ("resolveProvider" #f)))
+    ;; Semantic tokens
+    ("semanticTokensProvider"
+     (hash ("legend"
+            (hash ("tokenTypes" *capability-token-types*)
+                  ("tokenModifiers" *capability-token-modifiers*)))
+           ("full" #t)))
+    ;; Inlay hints
+    ("inlayHintProvider" #t)))

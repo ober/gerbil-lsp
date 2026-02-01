@@ -1,11 +1,244 @@
 ;;; -*- Gerbil -*-
 ;;; Code action handler — textDocument/codeAction
-(import :std/sugar
-        ../util/log)
+;;; Provides organize imports and add missing import actions
+(import :std/format
+        :std/sugar
+        :std/sort
+        ../util/log
+        ../util/position
+        ../util/string
+        ../types
+        ../state
+        ../analysis/document
+        ../analysis/parser
+        ../analysis/symbols
+        ../analysis/completion-data)
 (export #t)
 
+;;; CodeActionKind constants
+(def CodeActionKind.QuickFix            "quickfix")
+(def CodeActionKind.Source              "source")
+(def CodeActionKind.SourceOrganizeImports "source.organizeImports")
+
 ;;; Handle textDocument/codeAction
-;;; Returns an empty array (no code actions supported yet)
+;;; Returns CodeAction[] with available actions for the given range/context
 (def (handle-code-action params)
-  (lsp-debug "codeAction request")
-  [])
+  (let* ((td (hash-ref params "textDocument" (hash)))
+         (uri (hash-ref td "uri" ""))
+         (range (hash-ref params "range" (hash)))
+         (context (hash-ref params "context" (hash)))
+         (doc (get-document uri)))
+    (if doc
+      (let ((text (document-text doc))
+            (actions '()))
+        ;; Always offer "organize imports" if there are imports
+        (let ((organize (make-organize-imports-action uri text)))
+          (when organize
+            (set! actions (cons organize actions))))
+        ;; Offer "add missing import" based on diagnostics
+        (let ((diags (hash-ref context "diagnostics" [])))
+          (let ((import-actions (make-add-import-actions uri text diags)))
+            (set! actions (append actions import-actions))))
+        (list->vector actions))
+      [])))
+
+;;; Create an "Organize Imports" code action
+;;; Sorts import specs alphabetically
+(def (make-organize-imports-action uri text)
+  (let ((forms (parse-source text)))
+    (let ((import-forms (find-import-forms forms)))
+      (if (null? import-forms)
+        #f
+        ;; Build a single organized import form
+        (let ((all-specs (collect-all-import-specs import-forms)))
+          (if (< (length all-specs) 2)
+            #f  ;; Not enough imports to organize
+            (let* ((sorted-specs (sort-import-specs all-specs))
+                   (first-import (car import-forms))
+                   (last-import (last-elem import-forms))
+                   (start-line (located-form-line first-import))
+                   (end-line (located-form-end-line last-import))
+                   (end-col (located-form-end-col last-import))
+                   (new-text (format-organized-imports sorted-specs)))
+              (hash
+                ("title" "Organize Imports")
+                ("kind" CodeActionKind.SourceOrganizeImports)
+                ("edit"
+                 (hash ("changes"
+                        (hash (uri
+                               (vector
+                                 (make-text-edit
+                                   (make-lsp-range start-line 0 end-line end-col)
+                                   new-text)))))))))))))))
+
+;;; Find all top-level import forms
+(def (find-import-forms forms)
+  (let loop ((fs forms) (result '()))
+    (if (null? fs)
+      (reverse result)
+      (let ((lf (car fs)))
+        (if (and (pair? (located-form-form lf))
+                 (eq? (car (located-form-form lf)) 'import))
+          (loop (cdr fs) (cons lf result))
+          (loop (cdr fs) result))))))
+
+;;; Collect all import specs from multiple import forms
+(def (collect-all-import-specs import-forms)
+  (let ((specs '()))
+    (for-each
+      (lambda (lf)
+        (let ((form (located-form-form lf)))
+          (when (pair? (cdr form))
+            (for-each
+              (lambda (spec) (set! specs (cons spec specs)))
+              (cdr form)))))
+      import-forms)
+    (reverse specs)))
+
+;;; Sort import specs alphabetically by their string representation
+(def (sort-import-specs specs)
+  (let ((pairs (map (lambda (s) (cons (import-spec->sort-key s) s)) specs)))
+    (let ((sorted (sort pairs (lambda (a b) (string<? (car a) (car b))))))
+      (map cdr sorted))))
+
+;;; Get a sort key for an import spec
+(def (import-spec->sort-key spec)
+  (cond
+    ((symbol? spec) (symbol->string spec))
+    ((pair? spec) (format "~a" spec))
+    (else "")))
+
+;;; Format sorted imports as a single import form
+(def (format-organized-imports specs)
+  (if (null? specs)
+    ""
+    (let ((out (open-output-string)))
+      (display "(import" out)
+      (for-each
+        (lambda (spec)
+          (display "\n        " out)
+          (write spec out))
+        specs)
+      (display ")" out)
+      (get-output-string out))))
+
+;;; Create "Add missing import" code actions from diagnostics
+;;; Looks for unbound identifier errors and suggests imports
+(def (make-add-import-actions uri text diags)
+  (let ((actions '()))
+    (for-each
+      (lambda (diag)
+        (let ((msg (if (vector? diag)
+                     ""
+                     (hash-ref diag "message" ""))))
+          ;; Look for "unbound identifier" patterns
+          (let ((sym-name (extract-unbound-symbol msg)))
+            (when sym-name
+              (let ((suggestions (suggest-import-for sym-name)))
+                (for-each
+                  (lambda (module-name)
+                    (set! actions
+                      (cons (make-add-import-action uri text sym-name module-name)
+                            actions)))
+                  suggestions))))))
+      (if (vector? diags) (vector->list diags) '()))
+    actions))
+
+;;; Extract unbound symbol name from an error message
+(def (extract-unbound-symbol msg)
+  (cond
+    ;; Pattern: "unbound identifier: foo"
+    ((string-contains msg "unbound identifier")
+     (let ((parts (string-split-on-colon msg)))
+       (if (>= (length parts) 2)
+         (string-trim-whitespace (list-ref-safe parts (- (length parts) 1)))
+         #f)))
+    ;; Pattern: "Unbound variable: foo"
+    ((string-contains msg "Unbound variable")
+     (let ((parts (string-split-on-colon msg)))
+       (if (>= (length parts) 2)
+         (string-trim-whitespace (list-ref-safe parts (- (length parts) 1)))
+         #f)))
+    (else #f)))
+
+;;; Suggest module imports for a symbol
+;;; Uses the stdlib symbols list from completion-data
+(def (suggest-import-for sym-name)
+  (let ((result '()))
+    (for-each
+      (lambda (entry)
+        (when (string=? (car entry) sym-name)
+          (set! result (cons (cadr entry) result))))
+      *stdlib-symbols*)
+    (reverse result)))
+
+;;; Create a single "Add import" code action
+(def (make-add-import-action uri text sym-name module-name)
+  (let* ((forms (parse-source text))
+         (insert-pos (find-import-insert-position forms text)))
+    (hash
+      ("title" (format "Add import ~a from ~a" sym-name module-name))
+      ("kind" CodeActionKind.QuickFix)
+      ("edit"
+       (hash ("changes"
+              (hash (uri
+                     (vector
+                       (make-text-edit
+                         (make-lsp-range (car insert-pos) (cdr insert-pos)
+                                         (car insert-pos) (cdr insert-pos))
+                         (format "\n(import ~a)" module-name)))))))))))
+
+;;; Find where to insert a new import statement
+;;; Returns (line . col) — after the last existing import, or at line 0
+(def (find-import-insert-position forms text)
+  (let ((last-import-end 0))
+    (for-each
+      (lambda (lf)
+        (let ((form (located-form-form lf)))
+          (when (and (pair? form) (eq? (car form) 'import))
+            (set! last-import-end (located-form-end-line lf)))))
+      forms)
+    (cons last-import-end 0)))
+
+;;; Split string on colon
+(def (string-split-on-colon str)
+  (let loop ((i 0) (start 0) (parts '()))
+    (cond
+      ((>= i (string-length str))
+       (reverse (cons (substring str start i) parts)))
+      ((char=? (string-ref str i) #\:)
+       (loop (+ i 1) (+ i 1) (cons (substring str start i) parts)))
+      (else (loop (+ i 1) start parts)))))
+
+;;; Trim leading/trailing whitespace from a string
+(def (string-trim-whitespace str)
+  (let* ((len (string-length str))
+         (start (let loop ((i 0))
+                  (if (or (>= i len)
+                          (not (char-whitespace-trim? (string-ref str i))))
+                    i
+                    (loop (+ i 1)))))
+         (end (let loop ((i (- len 1)))
+                (if (or (< i start)
+                        (not (char-whitespace-trim? (string-ref str i))))
+                  (+ i 1)
+                  (loop (- i 1))))))
+    (substring str start end)))
+
+(def (char-whitespace-trim? c)
+  (or (char=? c #\space) (char=? c #\tab) (char=? c #\newline) (char=? c #\return)))
+
+;;; Safe list-ref
+(def (list-ref-safe lst n)
+  (let loop ((l lst) (i 0))
+    (cond
+      ((null? l) "")
+      ((= i n) (car l))
+      (else (loop (cdr l) (+ i 1))))))
+
+;;; Get last element of a list
+(def (last-elem lst)
+  (if (null? (cdr lst))
+    (car lst)
+    (last-elem (cdr lst))))
+

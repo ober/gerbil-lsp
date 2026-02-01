@@ -20,4 +20,4 @@
         (hash ("isIncomplete" #f)
               ("items" (list->vector items))))
       (hash ("isIncomplete" #f)
-            ("items" [])))))
+            ("items" (vector))))))

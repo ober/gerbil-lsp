@@ -20,7 +20,9 @@
         ./handlers/highlight
         ./handlers/folding
         ./handlers/selection
-        ./handlers/links)
+        ./handlers/links
+        ./handlers/semantic-tokens
+        ./handlers/inlay-hints)
 (export main)
 
 (def (main . args)
@@ -80,4 +82,11 @@
   (register-request-handler! "textDocument/foldingRange" handle-folding-range)
   (register-request-handler! "textDocument/selectionRange" handle-selection-range)
   (register-request-handler! "textDocument/documentLink" handle-document-link)
+  ;; Semantic tokens
+  (register-request-handler! "textDocument/semanticTokens/full"
+    handle-semantic-tokens-full)
+  ;; Range formatting
+  (register-request-handler! "textDocument/rangeFormatting" handle-range-formatting)
+  ;; Inlay hints
+  (register-request-handler! "textDocument/inlayHint" handle-inlay-hint)
   (lsp-info "all handlers registered"))

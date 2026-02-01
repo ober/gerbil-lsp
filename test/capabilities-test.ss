@@ -40,7 +40,7 @@
       (check (hash-key? (server-capabilities) "signatureHelpProvider") => #t))
 
     (test-case "server-capabilities: has codeActionProvider"
-      (check (hash-ref (server-capabilities) "codeActionProvider") => #t))
+      (check (hash-key? (server-capabilities) "codeActionProvider") => #t))
 
     (test-case "server-capabilities: has documentHighlightProvider"
       (check (hash-ref (server-capabilities) "documentHighlightProvider") => #t))

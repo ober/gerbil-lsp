@@ -34,5 +34,7 @@
     "lsp/handlers/folding"
     "lsp/handlers/selection"
     "lsp/handlers/links"
+    "lsp/handlers/semantic-tokens"
+    "lsp/handlers/inlay-hints"
     "lsp/server"
     (exe: "lsp/main" bin: "gerbil-lsp")))
