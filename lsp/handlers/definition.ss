@@ -6,7 +6,9 @@
         ../types
         ../state
         ../analysis/document
+        ../analysis/parser
         ../analysis/symbols
+        ../analysis/module
         ../analysis/index)
 (export #t)
 
@@ -22,13 +24,13 @@
       (let-values (((sym-name _start-col _end-col)
                     (symbol-at-position (document-text doc) line col)))
         (if sym-name
-          (find-definition-location sym-name uri)
+          (find-definition-location sym-name uri (document-text doc))
           (void)))
       (void))))
 
 ;;; Find the definition location for a symbol
-;;; Returns a Location or a list of Locations, or void if not found
-(def (find-definition-location name uri)
+;;; Returns a Location or void if not found
+(def (find-definition-location name uri text)
   ;; First search in current file
   (let ((local-syms (get-file-symbols uri)))
     (let ((found (find-sym-by-name name local-syms)))
@@ -36,7 +38,7 @@
         (make-lsp-location uri
           (make-lsp-range (sym-info-line found) (sym-info-col found)
                           (sym-info-end-line found) (sym-info-end-col found)))
-        ;; Search workspace
+        ;; Search workspace index
         (let ((defs (find-definitions-by-name name)))
           (if (pair? defs)
             (let* ((first-def (car defs))
@@ -46,6 +48,31 @@
                 (make-lsp-range (sym-info-line info) (sym-info-col info)
                                 (sym-info-end-line info)
                                 (sym-info-end-col info))))
-            (void)))))))
+            ;; Try resolving through imports
+            (find-definition-in-imports name uri text)))))))
 
-
+;;; Try to find a symbol definition by resolving the file's imports
+(def (find-definition-in-imports name uri text)
+  (with-catch
+    (lambda (e)
+      (lsp-debug "import definition lookup failed: ~a" e)
+      (void))
+    (lambda ()
+      (let* ((file-path (uri->file-path uri))
+             (forms (parse-source text))
+             (imports (extract-imports forms)))
+        (let loop ((specs imports))
+          (if (null? specs)
+            (void)
+            (let ((path (resolve-import-spec (car specs) file-path)))
+              (if path
+                (let ((exports (analyze-file-exports path)))
+                  (let ((found (find-sym-by-name name exports)))
+                    (if found
+                      (make-lsp-location (path->uri path)
+                        (make-lsp-range (sym-info-line found)
+                                        (sym-info-col found)
+                                        (sym-info-end-line found)
+                                        (sym-info-end-col found)))
+                      (loop (cdr specs)))))
+                (loop (cdr specs))))))))))

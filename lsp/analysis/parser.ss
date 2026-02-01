@@ -37,10 +37,11 @@
                         end-line))))))))))
 
 ;;; Get position info from a port
+;;; Gambit ports use 1-based line/column; LSP uses 0-based, so subtract 1
 (def (get-port-position port)
   (let ((line (input-port-line port))
         (col (input-port-column port)))
-    (cons line col)))
+    (cons (max 0 (- line 1)) (max 0 (- col 1)))))
 
 (def (position-line pos) (car pos))
 (def (position-col pos) (cdr pos))

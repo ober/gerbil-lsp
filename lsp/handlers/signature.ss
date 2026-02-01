@@ -114,14 +114,58 @@
           (loop (cdr ss)))))))
 
 ;;; Create a SignatureInformation from a sym-info
+;;; Extracts individual parameter labels for active parameter highlighting
 (def (make-sig-from-sym s)
   (let ((detail (sym-info-detail s)))
     (if detail
-      (make-signature-information detail
-        documentation: (format "Defined as ~a" (sym-info-name s)))
+      (let ((params (extract-param-labels detail)))
+        (make-signature-information detail
+          documentation: (format "Defined as ~a" (sym-info-name s))
+          parameters: params))
       (make-signature-information
         (format "(~a ...)" (sym-info-name s))
         documentation: (format "~a" (sym-info-name s))))))
+
+;;; Extract parameter labels from a signature string like "(name arg1 arg2 . rest)"
+;;; Returns a list of ParameterInformation objects
+(def (extract-param-labels sig-str)
+  (with-catch
+    (lambda (e) '())
+    (lambda ()
+      (let ((form (read (open-input-string sig-str))))
+        (if (and (pair? form) (pair? (cdr form)))
+          (let ((args (cdr form)))
+            (extract-params-from-arglist args))
+          '())))))
+
+;;; Convert an argument list to ParameterInformation objects
+;;; Handles: (a b c), (a b . rest), ((a default) b), keyword: args
+(def (extract-params-from-arglist args)
+  (cond
+    ((null? args) '())
+    ((symbol? args)
+     ;; Rest argument: . rest
+     (list (make-parameter-information (format ". ~a" args))))
+    ((pair? args)
+     (let ((param (car args)))
+       (cons
+         (cond
+           ;; Optional with default: (param default)
+           ((pair? param)
+            (make-parameter-information (format "~a" param)))
+           ;; Keyword argument: name:
+           ((and (symbol? param)
+                 (let ((s (symbol->string param)))
+                   (and (> (string-length s) 0)
+                        (char=? (string-ref s (- (string-length s) 1)) #\:))))
+            (make-parameter-information (symbol->string param)))
+           ;; Normal parameter
+           ((symbol? param)
+            (make-parameter-information (symbol->string param)))
+           ;; Anything else
+           (else (make-parameter-information (format "~a" param))))
+         (extract-params-from-arglist (cdr args)))))
+    (else '())))
 
 ;;; Check if char is whitespace
 (def (char-whitespace? c)

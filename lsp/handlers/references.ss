@@ -21,27 +21,42 @@
       (let-values (((sym-name _start _end)
                     (symbol-at-position (document-text doc) line col)))
         (if sym-name
-          (let ((refs (find-all-references sym-name uri)))
+          (let ((refs (find-all-references sym-name)))
             (list->vector refs))
           []))
       [])))
 
-;;; Find all references to a symbol across the workspace
-(def (find-all-references name current-uri)
-  (let ((result '()))
-    ;; Search in all open documents
+;;; Find all references to a symbol across the entire workspace
+;;; Searches both open documents and indexed files
+(def (find-all-references name)
+  (let ((result '())
+        (searched (make-hash-table)))
+    ;; Search open documents first (they have the latest text)
     (for-each
       (lambda (uri)
+        (hash-put! searched uri #t)
         (let ((doc (get-document uri)))
           (when doc
-            (let ((text (document-text doc)))
+            (find-symbol-in-text name (document-text doc) uri
+              (lambda (line col end-col)
+                (set! result
+                  (cons (make-lsp-location uri
+                          (make-lsp-range line col line end-col))
+                        result)))))))
+      (all-document-uris))
+    ;; Search indexed files that aren't open
+    (for-each
+      (lambda (uri)
+        (unless (hash-key? searched uri)
+          (let ((text (get-file-text uri)))
+            (when text
               (find-symbol-in-text name text uri
                 (lambda (line col end-col)
                   (set! result
                     (cons (make-lsp-location uri
                             (make-lsp-range line col line end-col))
                           result))))))))
-      (all-document-uris))
+      (all-indexed-uris))
     result))
 
 ;;; Find all occurrences of a symbol name in text
@@ -72,5 +87,3 @@
                               (string-ref line-text (+ col name-len))))))
           (callback line-num col (+ col name-len)))
         (loop (+ col 1))))))
-
-

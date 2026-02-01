@@ -6,7 +6,8 @@
         ../util/log
         ../state
         ./symbols
-        ./parser)
+        ./parser
+        ./module)
 (export #t)
 
 ;;; Gerbil special forms and keywords
@@ -47,26 +48,47 @@
 ;;; Generate completion candidates for a position in a document
 (def (completion-candidates uri text line col)
   (let ((prefix (get-completion-prefix text line col))
-        (result '()))
+        (result '())
+        (seen (make-hash-table)))  ;; deduplicate by name
     (lsp-debug "completion prefix: ~s" prefix)
+
+    ;; Helper to add an item, deduplicating by label
+    (define (add-item! item)
+      (let ((label (hash-ref item "label" "")))
+        (unless (hash-key? seen label)
+          (hash-put! seen label #t)
+          (set! result (cons item result)))))
+
     ;; Local symbols from this file
     (let ((file-syms (get-file-symbols uri)))
       (for-each
         (lambda (s)
           (when (or (not prefix) (string-prefix? prefix (sym-info-name s)))
-            (set! result
-              (cons (sym-info->completion-item s) result))))
+            (add-item! (sym-info->completion-item s))))
         file-syms))
+
+    ;; Symbols from the file's imports (resolved from import specs)
+    (with-catch
+      (lambda (e) (lsp-debug "import completion failed: ~a" e))
+      (lambda ()
+        (let* ((file-path (uri->file-path uri))
+               (forms (parse-source text))
+               (imported (get-imported-symbols forms file-path)))
+          (for-each
+            (lambda (s)
+              (when (or (not prefix) (string-prefix? prefix (sym-info-name s)))
+                (add-item! (sym-info->completion-item s detail-uri: "imported"))))
+            imported))))
+
     ;; Keywords
     (for-each
       (lambda (kw)
         (when (or (not prefix) (string-prefix? prefix kw))
-          (set! result
-            (cons (hash ("label" kw)
-                        ("kind" CompletionItemKind.Keyword)
-                        ("detail" "keyword"))
-                  result))))
+          (add-item! (hash ("label" kw)
+                           ("kind" CompletionItemKind.Keyword)
+                           ("detail" "keyword")))))
       *gerbil-keywords*)
+
     ;; Symbols from all indexed files
     (hash-for-each
       (lambda (other-uri syms)
@@ -74,22 +96,19 @@
           (for-each
             (lambda (s)
               (when (or (not prefix) (string-prefix? prefix (sym-info-name s)))
-                (set! result
-                  (cons (sym-info->completion-item s detail-uri: other-uri)
-                        result))))
+                (add-item! (sym-info->completion-item s detail-uri: other-uri))))
             syms)))
       *symbol-index*)
-    ;; Standard library symbols
+
+    ;; Standard library symbols (fallback for modules not yet imported)
     (for-each
       (lambda (entry)
         (let ((name (car entry))
               (mod (cadr entry)))
           (when (or (not prefix) (string-prefix? prefix name))
-            (set! result
-              (cons (hash ("label" name)
-                          ("kind" CompletionItemKind.Function)
-                          ("detail" mod))
-                    result)))))
+            (add-item! (hash ("label" name)
+                             ("kind" CompletionItemKind.Function)
+                             ("detail" mod))))))
       *stdlib-symbols*)
     result))
 

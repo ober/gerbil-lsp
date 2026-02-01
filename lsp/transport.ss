@@ -59,6 +59,9 @@
         (else (loop content-length))))))
 
 ;; Write one LSP message to port.
+;; Content-Length must be the byte count of the UTF-8 body.
+;; We compute via string->bytes (UTF-8) and rely on the output port
+;; using the same encoding for write-string.
 (def (write-message port json-string)
   (let* ((body-bytes (string->bytes json-string))
          (content-length (u8vector-length body-bytes)))

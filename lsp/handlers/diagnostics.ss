@@ -14,6 +14,7 @@
 (export #t)
 
 ;;; Publish diagnostics for a document (full: parse + compile)
+;;; Called on save — runs gxc and caches the results
 (def (publish-diagnostics-for uri)
   (let ((doc (get-document uri)))
     (when doc
@@ -23,25 +24,32 @@
                 ("diagnostics" (list->vector diags))))))))
 
 ;;; Publish parse-only diagnostics for a document (fast, no gxc)
-;;; Used on didChange for immediate feedback while typing
+;;; Used on didChange for immediate feedback while typing.
+;;; Merges parse diagnostics with cached gxc diagnostics so compiler
+;;; errors don't disappear while editing.
 (def (publish-parse-diagnostics uri text)
   (with-catch
     (lambda (e)
       (lsp-debug "parse diagnostics failed: ~a" e))
     (lambda ()
-      (let ((diags (parse-diagnostics text)))
+      (let ((parse-diags (parse-diagnostics text))
+            (cached-gxc (get-gxc-diagnostics uri)))
         (send-notification! "textDocument/publishDiagnostics"
           (hash ("uri" uri)
-                ("diagnostics" (list->vector diags))))))))
+                ("diagnostics"
+                 (list->vector (append parse-diags cached-gxc)))))))))
 
 ;;; Collect diagnostics for a document
-;;; Combines parse-level and compile-level diagnostics
+;;; Combines parse-level and compile-level diagnostics.
+;;; Caches the gxc diagnostics for use during editing.
 (def (collect-diagnostics uri doc)
-  (let ((text (document-text doc))
-        (file-path (uri->file-path uri)))
-    (append
-      (parse-diagnostics text)
-      (compile-diagnostics file-path text))))
+  (let* ((text (document-text doc))
+         (file-path (uri->file-path uri))
+         (parse-diags (parse-diagnostics text))
+         (gxc-diags (compile-diagnostics file-path text)))
+    ;; Cache gxc diagnostics for merging during didChange
+    (set-gxc-diagnostics! uri gxc-diags)
+    (append parse-diags gxc-diags)))
 
 ;;; Quick parse diagnostics — try to read the file as S-expressions
 (def (parse-diagnostics text)
@@ -50,15 +58,17 @@
     (let loop ()
       (with-catch
         (lambda (e)
-          (let ((msg (error-message e))
-                (line (error-line e)))
-            (set! diags
-              (cons (make-diagnostic
-                      (make-lsp-range (or line 0) 0 (or line 0) 1)
-                      (or msg (format "~a" e))
-                      severity: DiagnosticSeverity.Error
-                      source: "gerbil-lsp/parse")
-                    diags)))
+          (let ((msg (error-message e)))
+            (let-values (((line col) (error-line-col e)))
+              (let ((l (or line 0))
+                    (c (or col 0)))
+                (set! diags
+                  (cons (make-diagnostic
+                          (make-lsp-range l c l (+ c 1))
+                          (or msg (format "~a" e))
+                          severity: DiagnosticSeverity.Error
+                          source: "gerbil-lsp/parse")
+                        diags)))))
           ;; Don't try to continue after parse error
           diags)
         (lambda ()
@@ -80,17 +90,22 @@
          (error-exception-message e))
         (else (format "~a" e))))))
 
-;;; Try to extract line from an exception
-(def (error-line e)
+;;; Extract line and column from a parse exception
+;;; Returns (values line col) with 0-based values, or (values #f #f)
+;;; Gambit's readenv filepos encodes: lower 16 bits = 0-indexed line,
+;;; upper bits = 1-indexed column at error point
+(def (error-line-col e)
   (with-catch
-    (lambda (_) #f)
+    (lambda (_) (values #f #f))
     (lambda ()
-      (cond
-        ((datum-parsing-exception? e)
-         (let ((re (datum-parsing-exception-readenv e)))
-           ;; Readenv may have position info
-           #f))
-        (else #f)))))
+      (if (datum-parsing-exception? e)
+        (let* ((re (datum-parsing-exception-readenv e))
+               (filepos (##readenv-current-filepos re)))
+          (if (fixnum? filepos)
+            (values (bitwise-and filepos #xFFFF)
+                    (max 0 (- (arithmetic-shift filepos -16) 1)))
+            (values #f #f)))
+        (values #f #f)))))
 
 ;;; Compile diagnostics — run gxc on the file
 (def (compile-diagnostics file-path text)
@@ -116,7 +131,10 @@
                             stdout-redirection: #t)))
              (output (read-all-as-string proc))
              (status (process-status proc)))
-        (if (and (> status 0)
+        ;; process-status returns raw waitpid status;
+        ;; normal exit code N gives N*256, signals give lower byte.
+        ;; Any non-zero status indicates failure.
+        (if (and (not (= status 0))
                  (string? output)
                  (> (string-length output) 0))
           (parse-gxc-output output file-path)

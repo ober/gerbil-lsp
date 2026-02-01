@@ -1,5 +1,5 @@
 ;;; -*- Gerbil -*-
-;;; Rename handler — rename symbols across open documents
+;;; Rename handler — rename symbols across the workspace
 (import :std/sugar
         ../util/log
         ../util/position
@@ -45,12 +45,16 @@
           (make-workspace-edit (hash))))
       (make-workspace-edit (hash)))))
 
-;;; Compute rename edits across all open documents
+;;; Compute rename edits across the entire workspace
+;;; Searches open documents and indexed files
 ;;; Returns a hash of uri → TextEdit[]
 (def (compute-rename-edits old-name new-name)
-  (let ((changes (make-hash-table)))
+  (let ((changes (make-hash-table))
+        (searched (make-hash-table)))
+    ;; Search open documents first (they have the latest text)
     (for-each
       (lambda (uri)
+        (hash-put! searched uri #t)
         (let ((doc (get-document uri)))
           (when doc
             (let ((edits (find-rename-edits-in-text
@@ -58,6 +62,16 @@
               (when (pair? edits)
                 (hash-put! changes uri (list->vector edits)))))))
       (all-document-uris))
+    ;; Search indexed files that aren't open
+    (for-each
+      (lambda (uri)
+        (unless (hash-key? searched uri)
+          (let ((text (get-file-text uri)))
+            (when text
+              (let ((edits (find-rename-edits-in-text text old-name new-name)))
+                (when (pair? edits)
+                  (hash-put! changes uri (list->vector edits))))))))
+      (all-indexed-uris))
     changes))
 
 ;;; Find all positions to rename in a text
@@ -68,11 +82,9 @@
       (cond
         ((>= i (string-length text))
          ;; Process last line
-         (set! edits
-           (append edits
-             (find-edits-in-line text line-start i line-num
-                                 old-name old-len new-name)))
-         (reverse edits))
+         (append edits
+           (find-edits-in-line text line-start i line-num
+                               old-name old-len new-name)))
         ((char=? (string-ref text i) #\newline)
          (set! edits
            (append edits
@@ -104,5 +116,3 @@
                       new-name)
                     edits)))
           (loop (+ col 1)))))))
-
-

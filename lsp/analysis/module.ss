@@ -115,8 +115,28 @@
       imports)
     result))
 
-;;; Convert a URI to a file path (basic)
+;;; Convert a URI to a file path with percent-decoding
 (def (uri->file-path uri)
   (if (string-prefix? "file://" uri)
-    (substring uri 7 (string-length uri))
+    (uri-decode (substring uri 7 (string-length uri)))
     uri))
+
+;;; Convert a filesystem path to a file URI
+(def (path->uri path)
+  (string-append "file://" path))
+
+;;; Basic URI percent-decoding (%20 → space, etc.)
+(def (uri-decode str)
+  (let loop ((i 0) (acc '()))
+    (cond
+      ((>= i (string-length str))
+       (list->string (reverse acc)))
+      ((and (char=? (string-ref str i) #\%)
+            (< (+ i 2) (string-length str)))
+       (let ((hex (substring str (+ i 1) (+ i 3))))
+         (let ((code (string->number hex 16)))
+           (if code
+             (loop (+ i 3) (cons (integer->char code) acc))
+             (loop (+ i 1) (cons #\% acc))))))
+      (else
+       (loop (+ i 1) (cons (string-ref str i) acc))))))

@@ -33,6 +33,8 @@
          (forms (parse-source text))
          (syms (extract-symbols forms)))
     (set-file-symbols! uri syms)
+    ;; Cache text for workspace-wide references/rename
+    (set-file-text! uri text)
     (lsp-debug "indexed ~a: ~a symbols" path (length syms))))
 
 ;;; Find all .ss files under a directory recursively
@@ -101,27 +103,41 @@
 
 ;;; Find all references to a symbol name across indexed files
 ;;; This does text-based search with word boundary detection
+;;; Searches open documents and the file text cache
 (def (find-references-by-name name)
-  (let ((result '()))
-    (hash-for-each
-      (lambda (uri _syms)
+  (let ((result '())
+        (searched (make-hash-table)))
+    ;; Search open documents first (latest text)
+    (for-each
+      (lambda (uri)
+        (hash-put! searched uri #t)
         (let ((doc (get-document uri)))
           (when doc
-            (let ((text (document-text doc))
-                  (name-len (string-length name)))
-              (let ((lines (string-split-lines text)))
-                (let line-loop ((ls lines) (line-num 0))
-                  (unless (null? ls)
-                    (let ((line-text (car ls)))
-                      (find-in-line line-text name name-len uri line-num
-                                    (lambda (col)
-                                      (set! result
-                                        (cons (list uri line-num col
-                                                    (+ col name-len))
-                                              result))))
-                      (line-loop (cdr ls) (+ line-num 1))))))))))
+            (search-text-for-refs (document-text doc) name uri
+              (lambda (entry) (set! result (cons entry result)))))))
+      (all-document-uris))
+    ;; Search indexed files not currently open
+    (hash-for-each
+      (lambda (uri _syms)
+        (unless (hash-key? searched uri)
+          (let ((text (get-file-text uri)))
+            (when text
+              (search-text-for-refs text name uri
+                (lambda (entry) (set! result (cons entry result))))))))
       *symbol-index*)
     result))
+
+;;; Search text for all references to a name, calling callback with (uri line col end-col)
+(def (search-text-for-refs text name uri callback)
+  (let ((name-len (string-length name))
+        (lines (string-split-lines text)))
+    (let line-loop ((ls lines) (line-num 0))
+      (unless (null? ls)
+        (let ((line-text (car ls)))
+          (find-in-line line-text name name-len uri line-num
+            (lambda (col)
+              (callback (list uri line-num col (+ col name-len)))))
+          (line-loop (cdr ls) (+ line-num 1)))))))
 
 ;;; Find occurrences of name in a line with word boundary checking
 (def (find-in-line text name name-len uri line-num callback)

@@ -17,6 +17,13 @@
 ;;; Module cache: module-path → export list
 (def *module-cache* (make-hash-table))
 
+;;; File text cache: uri → text string (for indexed but not open files)
+(def *file-text-cache* (make-hash-table))
+
+;;; Last gxc diagnostics cache: uri → diagnostics list
+;;; Preserved during editing so parse diagnostics don't replace them
+(def *gxc-diagnostics-cache* (make-hash-table))
+
 ;;; --- Document operations ---
 
 (def (get-document uri)
@@ -75,6 +82,33 @@
         (for-each (lambda (s) (set! result (cons (cons uri s) result))) syms))
       *symbol-index*)
     result))
+
+;;; --- File text cache operations ---
+;;; Used for workspace-wide references/rename on files not currently open
+
+(def (get-file-text uri)
+  (hash-ref *file-text-cache* uri #f))
+
+(def (set-file-text! uri text)
+  (hash-put! *file-text-cache* uri text))
+
+(def (remove-file-text! uri)
+  (hash-remove! *file-text-cache* uri))
+
+;;; Get all URIs that have indexed symbols
+(def (all-indexed-uris)
+  (hash-keys *symbol-index*))
+
+;;; --- GXC diagnostics cache operations ---
+
+(def (get-gxc-diagnostics uri)
+  (hash-ref *gxc-diagnostics-cache* uri '()))
+
+(def (set-gxc-diagnostics! uri diags)
+  (hash-put! *gxc-diagnostics-cache* uri diags))
+
+(def (clear-gxc-diagnostics! uri)
+  (hash-remove! *gxc-diagnostics-cache* uri))
 
 ;;; --- Module cache operations ---
 
