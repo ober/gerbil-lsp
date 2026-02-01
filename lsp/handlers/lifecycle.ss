@@ -5,7 +5,8 @@
         ../jsonrpc
         ../types
         ../capabilities
-        ../state)
+        ../state
+        ../analysis/index)
 (export #t)
 
 ;;; Handle "initialize" request
@@ -27,10 +28,18 @@
                               ("version" "0.1.0"))))))
 
 ;;; Handle "initialized" notification
-;;; Client confirms initialization is complete
+;;; Client confirms initialization is complete — index workspace
 (def (handle-initialized params)
   (set-initialized! #t)
   (lsp-info "server initialized")
+  ;; Index all .ss files in the workspace for symbols
+  (let ((root (workspace-root)))
+    (when root
+      (with-catch
+        (lambda (e)
+          (lsp-warn "workspace indexing failed: ~a" e))
+        (lambda ()
+          (index-workspace! root)))))
   (void))
 
 ;;; Handle "shutdown" request

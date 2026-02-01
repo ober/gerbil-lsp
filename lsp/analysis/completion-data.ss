@@ -79,6 +79,18 @@
                         result))))
             syms)))
       *symbol-index*)
+    ;; Standard library symbols
+    (for-each
+      (lambda (entry)
+        (let ((name (car entry))
+              (mod (cadr entry)))
+          (when (or (not prefix) (string-prefix? prefix name))
+            (set! result
+              (cons (hash ("label" name)
+                          ("kind" CompletionItemKind.Function)
+                          ("detail" mod))
+                    result)))))
+      *stdlib-symbols*)
     result))
 
 ;;; Convert a sym-info to a CompletionItem
@@ -125,6 +137,74 @@
          (substring text start i)
          (loop (+ i 1) (+ cur 1) (+ i 1))))
       (else (loop (+ i 1) cur start)))))
+
+;;; Standard library symbols with their source modules
+;;; Curated list of commonly used exports for rich completions
+(def *stdlib-symbols*
+  '(;; :std/sugar
+    ("when-let" ":std/sugar") ("if-let" ":std/sugar")
+    ("with-destroy" ":std/sugar") ("ignore-errors" ":std/sugar")
+    ("awhen" ":std/sugar") ("chain" ":std/sugar") ("is" ":std/sugar")
+    ("with-id" ":std/sugar") ("let-hash" ":std/sugar")
+    ("using-method" ":std/sugar") ("with-methods" ":std/sugar")
+    ;; :std/iter
+    ("for" ":std/iter") ("for*" ":std/iter")
+    ("for/collect" ":std/iter") ("for/fold" ":std/iter")
+    ("in-range" ":std/iter") ("in-iota" ":std/iter")
+    ("in-naturals" ":std/iter") ("in-hash" ":std/iter")
+    ("in-hash-keys" ":std/iter") ("in-hash-values" ":std/iter")
+    ("in-input-lines" ":std/iter") ("in-input-chars" ":std/iter")
+    ("yield" ":std/iter") ("iter" ":std/iter")
+    ;; :std/text/json
+    ("read-json" ":std/text/json") ("write-json" ":std/text/json")
+    ("string->json-object" ":std/text/json")
+    ("json-object->string" ":std/text/json")
+    ("bytes->json-object" ":std/text/json")
+    ("json-object->bytes" ":std/text/json")
+    ("pretty-json" ":std/text/json")
+    ;; :std/misc/ports
+    ("read-file-string" ":std/misc/ports")
+    ("read-all-as-string" ":std/misc/ports")
+    ("read-file-lines" ":std/misc/ports")
+    ("read-all-as-lines" ":std/misc/ports")
+    ("write-file-string" ":std/misc/ports")
+    ("write-file-lines" ":std/misc/ports")
+    ("copy-port" ":std/misc/ports")
+    ("writeln" ":std/misc/ports")
+    ;; :std/misc/string
+    ("string-trim-prefix" ":std/misc/string")
+    ("string-trim-suffix" ":std/misc/string")
+    ("string-trim-eol" ":std/misc/string")
+    ("string-split-prefix" ":std/misc/string")
+    ("string-split-suffix" ":std/misc/string")
+    ("string-split-eol" ":std/misc/string")
+    ("string-subst" ":std/misc/string")
+    ("string-whitespace?" ":std/misc/string")
+    ("str" ":std/misc/string")
+    ;; :std/misc/process
+    ("run-process" ":std/misc/process")
+    ("run-process/batch" ":std/misc/process")
+    ("invoke" ":std/misc/process")
+    ("filter-with-process" ":std/misc/process")
+    ;; :std/misc/path
+    ("path-simplify" ":std/misc/path")
+    ("path-extension-is?" ":std/misc/path")
+    ("path-parent" ":std/misc/path")
+    ("path-default-extension" ":std/misc/path")
+    ("subpath" ":std/misc/path")
+    ("absolute-path?" ":std/misc/path")
+    ;; :std/error
+    ("with-exception-stack-trace" ":std/error")
+    ("deferror-class" ":std/error")
+    ("raise-bad-argument" ":std/error")
+    ("check-argument" ":std/error")
+    ("dump-stack-trace!" ":std/error")
+    ;; :std/sort
+    ("sort" ":std/sort") ("sort!" ":std/sort")
+    ("stable-sort" ":std/sort") ("stable-sort!" ":std/sort")
+    ;; :std/format
+    ("format" ":std/format") ("fprintf" ":std/format")
+    ("printf" ":std/format")))
 
 ;;; Characters that can appear in completion prefixes
 (def (completion-char? c)

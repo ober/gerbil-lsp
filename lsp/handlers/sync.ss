@@ -35,8 +35,10 @@
                           (document-text doc))))
           (let ((updated (document-apply-full-change doc new-text version)))
             (set-document! uri updated)
-            ;; Re-analyze
-            (analyze-document! uri updated)))))))
+            ;; Re-analyze symbols
+            (analyze-document! uri updated)
+            ;; Publish parse-level diagnostics (fast, no gxc)
+            (publish-parse-diagnostics uri new-text)))))))
 
 ;;; Handle textDocument/didClose
 (def (handle-did-close params)

@@ -2,7 +2,6 @@
 ;;; Diagnostics handler — compile Gerbil files and report errors
 (import :std/format
         :std/sugar
-        :std/misc/process
         :std/misc/ports
         :std/misc/string
         ../util/log
@@ -14,11 +13,23 @@
         ../analysis/module)
 (export #t)
 
-;;; Publish diagnostics for a document
+;;; Publish diagnostics for a document (full: parse + compile)
 (def (publish-diagnostics-for uri)
   (let ((doc (get-document uri)))
     (when doc
       (let ((diags (collect-diagnostics uri doc)))
+        (send-notification! "textDocument/publishDiagnostics"
+          (hash ("uri" uri)
+                ("diagnostics" (list->vector diags))))))))
+
+;;; Publish parse-only diagnostics for a document (fast, no gxc)
+;;; Used on didChange for immediate feedback while typing
+(def (publish-parse-diagnostics uri text)
+  (with-catch
+    (lambda (e)
+      (lsp-debug "parse diagnostics failed: ~a" e))
+    (lambda ()
+      (let ((diags (parse-diagnostics text)))
         (send-notification! "textDocument/publishDiagnostics"
           (hash ("uri" uri)
                 ("diagnostics" (list->vector diags))))))))
@@ -88,20 +99,27 @@
     (run-gxc-diagnostics file-path)
     '()))
 
-;;; Run gxc -S on a file and parse the error output
+;;; Run gxc -S on a file and parse the error output.
+;;; Uses open-process because run-process throws on non-zero exit,
+;;; but gxc exits non-zero when there are compilation errors —
+;;; exactly when we need to read its output.
 (def (run-gxc-diagnostics file-path)
   (with-catch
     (lambda (e)
       (lsp-debug "gxc diagnostics failed: ~a" e)
       '())
     (lambda ()
-      (let ((result (run-process ["gxc" "-S" file-path]
-                      stderr-redirection: #t
-                      show-console: #f)))
-        ;; gxc outputs errors to stderr
-        ;; Parse the error output
-        (if (and (string? result) (> (string-length result) 0))
-          (parse-gxc-output result file-path)
+      (let* ((proc (open-process
+                      (list path: "gxc"
+                            arguments: (list "-S" file-path)
+                            stderr-redirection: #t
+                            stdout-redirection: #t)))
+             (output (read-all-as-string proc))
+             (status (process-status proc)))
+        (if (and (> status 0)
+                 (string? output)
+                 (> (string-length output) 0))
+          (parse-gxc-output output file-path)
           '())))))
 
 ;;; Parse gxc error output into diagnostics
