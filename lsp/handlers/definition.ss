@@ -48,10 +48,4 @@
                                 (sym-info-end-col info))))
             (void)))))))
 
-;;; Find a symbol by name in a list
-(def (find-sym-by-name name syms)
-  (let loop ((ss syms))
-    (if (null? ss) #f
-      (if (string=? name (sym-info-name (car ss)))
-        (car ss)
-        (loop (cdr ss))))))
+

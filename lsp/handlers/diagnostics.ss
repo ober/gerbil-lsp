@@ -1,6 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; Diagnostics handler — compile Gerbil files and report errors
-(import :std/sugar
+(import :std/format
+        :std/sugar
         :std/misc/process
         :std/misc/ports
         :std/misc/string
@@ -8,7 +9,9 @@
         ../util/position
         ../types
         ../state
-        ../server)
+        ../server
+        ../analysis/document
+        ../analysis/module)
 (export #t)
 
 ;;; Publish diagnostics for a document
@@ -103,7 +106,7 @@
 
 ;;; Parse gxc error output into diagnostics
 (def (parse-gxc-output output file-path)
-  (let ((lines (string-split-eol output))
+  (let ((lines (split-lines output))
         (diags '()))
     (for-each
       (lambda (line)
@@ -168,8 +171,13 @@
       (if (null? rest) acc
         (loop (cdr rest) (string-append acc sep (car rest)))))))
 
-;;; Convert URI to file path
-(def (uri->file-path uri)
-  (if (string-prefix? "file://" uri)
-    (substring uri 7 (string-length uri))
-    uri))
+;;; Split a string into lines
+(def (split-lines text)
+  (let loop ((i 0) (start 0) (lines '()))
+    (cond
+      ((>= i (string-length text))
+       (reverse (cons (substring text start i) lines)))
+      ((char=? (string-ref text i) #\newline)
+       (loop (+ i 1) (+ i 1) (cons (substring text start i) lines)))
+      (else
+       (loop (+ i 1) start lines)))))

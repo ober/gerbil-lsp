@@ -6,6 +6,7 @@
         ../util/log
         ../util/position
         ../state
+        ./document
         ./parser
         ./symbols)
 (export #t)

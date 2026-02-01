@@ -1,6 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; Hover handler — show symbol info on hover
-(import :std/sugar
+(import :std/format
+        :std/sugar
         ../util/log
         ../util/position
         ../types
@@ -44,14 +45,6 @@
           (if (pair? defs)
             (cdr (car defs))  ; return the sym-info
             #f))))))
-
-;;; Find a symbol by name in a list of sym-info
-(def (find-sym-by-name name syms)
-  (let loop ((ss syms))
-    (if (null? ss) #f
-      (if (string=? name (sym-info-name (car ss)))
-        (car ss)
-        (loop (cdr ss))))))
 
 ;;; Format hover information as markdown
 (def (format-hover-info name info)

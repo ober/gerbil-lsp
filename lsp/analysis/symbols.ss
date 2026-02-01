@@ -1,6 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; Symbol extraction from parsed Gerbil source forms
-(import :std/iter
+(import :std/format
+        :std/iter
         :std/sugar
         ../types
         ../util/log
@@ -217,6 +218,14 @@
               (cdr form)))))
       located-forms)
     (reverse exports)))
+
+;;; Find a symbol by name in a list of sym-info
+(def (find-sym-by-name name syms)
+  (let loop ((ss syms))
+    (if (null? ss) #f
+      (if (string=? name (sym-info-name (car ss)))
+        (car ss)
+        (loop (cdr ss))))))
 
 ;;; Format a definition signature for display
 (def (format-def-signature target)

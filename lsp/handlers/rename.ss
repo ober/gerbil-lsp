@@ -105,9 +105,4 @@
                     edits)))
           (loop (+ col 1)))))))
 
-;;; Check if a character is part of a Scheme symbol
-(def (symbol-char? c)
-  (or (char-alphabetic? c)
-      (char-numeric? c)
-      (memv c '(#\- #\_ #\! #\? #\* #\+ #\/ #\< #\> #\= #\. #\: #\# #\%
-                #\& #\^ #\~))))
+
