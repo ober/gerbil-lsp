@@ -1,0 +1,76 @@
+;;; -*- Gerbil -*-
+;;; Document symbol and workspace symbol handlers
+(import :std/sugar
+        :std/iter
+        ../util/log
+        ../util/position
+        ../types
+        ../state
+        ../analysis/document
+        ../analysis/symbols
+        ../analysis/index)
+(export #t)
+
+;;; Handle textDocument/documentSymbol
+;;; Returns DocumentSymbol[] (hierarchical)
+(def (handle-document-symbol params)
+  (let* ((td (hash-ref params "textDocument" (hash)))
+         (uri (hash-ref td "uri" "")))
+    (let ((syms (get-file-symbols uri)))
+      (list->vector
+        (map sym-info->document-symbol syms)))))
+
+;;; Handle workspace/symbol
+;;; Returns SymbolInformation[] (flat, filtered by query)
+(def (handle-workspace-symbol params)
+  (let ((query (hash-ref params "query" "")))
+    (let ((result '()))
+      (hash-for-each
+        (lambda (uri syms)
+          (for-each
+            (lambda (s)
+              (when (or (string=? query "")
+                        (string-contains-ci (sym-info-name s) query))
+                (set! result
+                  (cons (sym-info->symbol-information s uri) result))))
+            syms))
+        *symbol-index*)
+      (list->vector (take-at-most result 100)))))
+
+;;; Convert sym-info to DocumentSymbol
+(def (sym-info->document-symbol s)
+  (let ((range (make-lsp-range (sym-info-line s) (sym-info-col s)
+                               (sym-info-end-line s) (sym-info-end-col s)))
+        (sel-range (make-lsp-range (sym-info-line s) (sym-info-col s)
+                                    (sym-info-line s)
+                                    (+ (sym-info-col s)
+                                       (string-length (sym-info-name s))))))
+    (make-document-symbol (sym-info-name s) (sym-info-kind s)
+                          range sel-range)))
+
+;;; Convert sym-info to SymbolInformation (for workspace/symbol)
+(def (sym-info->symbol-information s uri)
+  (make-symbol-information
+    (sym-info-name s)
+    (sym-info-kind s)
+    (make-lsp-location uri
+      (make-lsp-range (sym-info-line s) (sym-info-col s)
+                      (sym-info-end-line s) (sym-info-end-col s)))))
+
+;;; Case-insensitive substring search
+(def (string-contains-ci haystack needle)
+  (let ((h (string-downcase haystack))
+        (n (string-downcase needle)))
+    (let ((hlen (string-length h))
+          (nlen (string-length n)))
+      (let loop ((i 0))
+        (cond
+          ((> (+ i nlen) hlen) #f)
+          ((string=? n (substring h i (+ i nlen))) #t)
+          (else (loop (+ i 1))))))))
+
+;;; Take at most N elements from a list
+(def (take-at-most lst n)
+  (if (or (null? lst) (<= n 0))
+    '()
+    (cons (car lst) (take-at-most (cdr lst) (- n 1)))))

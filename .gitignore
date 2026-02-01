@@ -1,0 +1,8 @@
+.gerbil/
+*.o*
+*.ssi
+*~
+\#*\#
+.#*
+build-deps
+/manifest.ss
