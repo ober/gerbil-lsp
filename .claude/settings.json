@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allowedTools": [
+      "mcp__gerbil__*"
+    ]
+  }
+}

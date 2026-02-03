@@ -15,7 +15,7 @@ When a Gerbil MCP server is available, you MUST use its tools extensively instea
 - **`gerbil_eval`**: Test expressions interactively to verify assumptions and reproduce issues.
 - **`gerbil_apropos`**: Search for symbols by substring when you're unsure of exact names.
 - **`gerbil_list_std_modules`**: Discover available standard library modules, optionally filtered by prefix.
-- **`gerbil_find_definition`**: Locate where a symbol is defined (source file, module, kind, arity).
+- **`gerbil_find_definition`**: Locate where a symbol is defined (source file, module, kind, arity). Use `source_preview: true` to include a code preview.
 - **`gerbil_load_file`**: Parse a `.ss` file to extract its imports, exports, and definitions without executing it.
 - **`gerbil_module_deps`**: See what a module imports. Use `transitive: true` for full dependency tree.
 
@@ -32,19 +32,25 @@ When a Gerbil MCP server is available, you MUST use its tools extensively instea
 
 ### For Multi-Step Exploration
 
-- **`gerbil_repl_session`**: Maintain persistent state across evaluations. Define functions, import modules, test incrementally.
+- **`gerbil_repl_session`**: Maintain persistent state across evaluations. Define functions, import modules, test incrementally. Use `preload_file` to load a file's imports into the session automatically.
 
 ### For Building and Testing
 
 - **`gerbil_build_project`**: Compile or clean a project directory using gxpkg.
-- **`gerbil_run_tests`**: Execute `:std/test` files and see pass/fail results with failure details.
+- **`gerbil_run_tests`**: Execute a single `:std/test` file (`file_path`) or run project-wide tests (`directory`). Use `filter` to match test names, `quiet` for errors-only output.
 - **`gerbil_package_info`**: List installed packages, search the package directory, or view metadata.
 - **`gerbil_package_manage`**: Install, update, or uninstall Gerbil packages.
 - **`gerbil_scaffold`**: Create a new Gerbil project from a template using gxpkg new.
 
+### For Performance Analysis
+
+- **`gerbil_profile`**: Instrument specific functions with call counting and timing. Reports per-function stats (calls, time, avg, %) plus overall wall/CPU/GC time and allocation.
+- **`gerbil_heap_profile`**: Capture GC heap metrics before/after an expression. Reports heap size, allocation, live/movable/still objects with deltas.
+- **`gerbil_trace_calls`**: Lightweight call counting (no timing overhead). Count how many times specified functions are called.
+
 ### For Code Quality
 
-- **`gerbil_lint`**: Static analysis for common issues: unused imports, duplicate definitions, style warnings, shadowed bindings, and compilation errors.
+- **`gerbil_lint`**: Static analysis for common issues: unused imports, duplicate definitions, style warnings, shadowed bindings, hash literal symbol key warnings, and compilation errors.
 - **`gerbil_diagnostics`**: Run `gxc -S` on a file or project and get structured diagnostics with file, line, column, severity, and message.
 - **`gerbil_format`**: Pretty-print Gerbil expressions using Gambit's pretty-print.
 - **`gerbil_benchmark`**: Measure wall-clock time, CPU time, GC stats, and memory allocation.
@@ -55,6 +61,9 @@ When a Gerbil MCP server is available, you MUST use its tools extensively instea
 - **`gerbil_workspace_symbols`**: Search for symbol definitions across all `.ss` files in a project directory.
 - **`gerbil_find_callers`**: Find all files in a directory that reference a given symbol, with line numbers.
 - **`gerbil_suggest_imports`**: Discover which standard library module exports a given symbol.
+- **`gerbil_call_graph`**: Static call graph analysis — see which functions call which in a source file.
+- **`gerbil_check_balance`**: Fast paren/bracket/brace balance checking without spawning a subprocess.
+- **`gerbil_read_forms`**: Read a file with the actual Gerbil reader and see each form's line range and summary.
 - **`gerbil_version`**: Check Gerbil/Gambit versions, installation path, and system type.
 
 ### For Refactoring
@@ -64,6 +73,7 @@ When a Gerbil MCP server is available, you MUST use its tools extensively instea
 ### For Project Context
 
 - **`gerbil_project_info`**: Single-call project summary: package name, build targets, source files, and external dependencies.
+- **`gerbil_project_map`**: Complete view of all modules with their exports, definitions by kind, and import dependencies.
 
 ### Key Principle
 
