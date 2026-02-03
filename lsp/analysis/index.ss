@@ -1,12 +1,14 @@
 ;;; -*- Gerbil -*-
 ;;; Workspace-wide symbol index
 (import :std/iter
+        :std/format
         :std/sugar
         :std/misc/ports
         ../util/log
         ../util/position
         ../util/string
         ../state
+        ../server
         ./document
         ./parser
         ./symbols
@@ -27,6 +29,29 @@
             (lambda ()
               (index-file-by-path! path))))
         files))))
+
+;;; Index workspace with progress reporting
+(def (index-workspace-with-progress! root progress-token)
+  (when root
+    (lsp-info "indexing workspace: ~a" root)
+    (let ((files (find-gerbil-files root)))
+      (let ((total (length files))
+            (done 0))
+        (lsp-info "found ~a Gerbil files" total)
+        (for-each
+          (lambda (path)
+            (with-catch
+              (lambda (e)
+                (lsp-debug "failed to index ~a: ~a" path e))
+              (lambda ()
+                (index-file-by-path! path)))
+            (set! done (+ done 1))
+            (when (> total 0)
+              (let ((pct (min 100 (quotient (* done 100) total))))
+                (send-progress! progress-token "report"
+                  message: (format "~a/~a files" done total)
+                  percentage: pct))))
+          files)))))
 
 ;;; Index a single file by its filesystem path
 (def (index-file-by-path! path)

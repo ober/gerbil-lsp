@@ -36,5 +36,11 @@
     "lsp/handlers/links"
     "lsp/handlers/semantic-tokens"
     "lsp/handlers/inlay-hints"
+    "lsp/handlers/call-hierarchy"
+    "lsp/handlers/implementation"
+    "lsp/handlers/type-hierarchy"
+    "lsp/handlers/code-lens"
+    "lsp/handlers/on-type-formatting"
+    "lsp/handlers/pull-diagnostics"
     "lsp/server"
     (exe: "lsp/main" bin: "gerbil-lsp")))

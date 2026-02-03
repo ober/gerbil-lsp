@@ -62,6 +62,10 @@
 (def MarkupKind.PlainText "plaintext")
 (def MarkupKind.Markdown  "markdown")
 
+;;; InsertTextFormat
+(def InsertTextFormat.PlainText 1)
+(def InsertTextFormat.Snippet   2)
+
 ;;; --- Type constructors ---
 
 (def (make-text-edit range new-text)

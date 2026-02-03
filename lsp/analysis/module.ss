@@ -70,16 +70,35 @@
                                       clean ".ss")))
         (if (file-exists? pkg-path) pkg-path #f)))))
 
-;;; Get exports for a module, using cache
+;;; Get exports for a module, using cache with mtime invalidation
 (def (get-or-resolve-module-exports module-spec current-file)
-  (let ((cached (get-module-exports module-spec)))
-    (or cached
-        (let ((path (resolve-import-spec module-spec current-file)))
-          (if path
-            (let ((exports (analyze-file-exports path)))
-              (set-module-exports! module-spec exports)
-              exports)
-            '())))))
+  (let ((cached (get-module-exports module-spec))
+        (path (resolve-import-spec module-spec current-file)))
+    ;; Check if cache is still valid via mtime
+    (if (and cached path (cache-still-valid? module-spec path))
+      cached
+      (if path
+        (let ((exports (analyze-file-exports path)))
+          (set-module-exports! module-spec exports)
+          ;; Record the mtime for cache validation
+          (with-catch
+            (lambda (e) (void))
+            (lambda ()
+              (set-module-cache-timestamp! module-spec
+                (file-info-last-modification-time (file-info path)))))
+          exports)
+        (or cached '())))))
+
+;;; Check if cached module exports are still valid
+(def (cache-still-valid? module-spec path)
+  (with-catch
+    (lambda (e) #f)
+    (lambda ()
+      (let ((cached-ts (get-module-cache-timestamp module-spec)))
+        (if cached-ts
+          (let ((current-ts (file-info-last-modification-time (file-info path))))
+            (equal? cached-ts current-ts))
+          #f)))))
 
 ;;; Analyze a file to get its exported symbols
 (def (analyze-file-exports file-path)

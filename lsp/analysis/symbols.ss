@@ -112,11 +112,14 @@
       (cond
         ;; (defstruct (name super) ...)
         ((pair? name)
-         (let ((actual-name (car name)))
+         (let ((actual-name (car name))
+               (parent (if (> (length name) 1) (cadr name) #f)))
            (if (symbol? actual-name)
              (list (make-sym-info (symbol->string actual-name)
                                   SymbolKind.Struct line col end-line end-col
-                                  (format "struct ~a" actual-name)))
+                                  (if (and parent (symbol? parent))
+                                    (format "struct ~a < ~a" actual-name parent)
+                                    (format "struct ~a" actual-name))))
              '())))
         ((symbol? name)
          (list (make-sym-info (symbol->string name)
@@ -130,11 +133,14 @@
     (let ((name (cadr form)))
       (cond
         ((pair? name)
-         (let ((actual-name (car name)))
+         (let ((actual-name (car name))
+               (parent (if (> (length name) 1) (cadr name) #f)))
            (if (symbol? actual-name)
              (list (make-sym-info (symbol->string actual-name)
                                   SymbolKind.Class line col end-line end-col
-                                  (format "class ~a" actual-name)))
+                                  (if (and parent (symbol? parent))
+                                    (format "class ~a < ~a" actual-name parent)
+                                    (format "class ~a" actual-name))))
              '())))
         ((symbol? name)
          (list (make-sym-info (symbol->string name)

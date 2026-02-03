@@ -13,15 +13,15 @@
 ;; Returns the ServerCapabilities object for the initialize response
 (def (server-capabilities)
   (hash
-    ;; Full document sync — client sends entire text on each change
+    ;; Incremental document sync — client sends range edits
     ("textDocumentSync"
      (hash ("openClose" #t)
-           ("change" TextDocumentSyncKind.Full)
+           ("change" TextDocumentSyncKind.Incremental)
            ("save" (hash ("includeText" #t)))))
     ;; Completion
     ("completionProvider"
      (hash ("triggerCharacters" ["(" ":" "/" "."])
-           ("resolveProvider" #f)))
+           ("resolveProvider" #t)))
     ;; Hover
     ("hoverProvider" #t)
     ;; Go to definition
@@ -62,4 +62,23 @@
                   ("tokenModifiers" *capability-token-modifiers*)))
            ("full" #t)))
     ;; Inlay hints
-    ("inlayHintProvider" #t)))
+    ("inlayHintProvider" #t)
+    ;; Call hierarchy
+    ("callHierarchyProvider" #t)
+    ;; Go to implementation
+    ("implementationProvider" #t)
+    ;; Type hierarchy
+    ("typeHierarchyProvider" #t)
+    ;; Code lenses
+    ("codeLensProvider" (hash ("resolveProvider" #f)))
+    ;; On-type formatting
+    ("documentOnTypeFormattingProvider"
+     (hash ("firstTriggerCharacter" ")")
+           ("moreTriggerCharacter" ["]" "\n"])))
+    ;; Pull diagnostics
+    ("diagnosticProvider"
+     (hash ("interFileDependencies" #f)
+           ("workspaceDiagnostics" #f)))
+    ;; Workspace capabilities
+    ("workspace"
+     (hash ("workDoneProgress" #t)))))

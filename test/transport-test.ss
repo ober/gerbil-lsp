@@ -6,7 +6,14 @@
 
 (export transport-test-suite)
 
-(def +scratchpad+ "/private/tmp/claude-501/-Users-user-mine-gerbil-lsp/9e6c6aa3-b78e-4627-a29e-257baff8e39a/scratchpad")
+(def +scratchpad+
+  (let ((dir (string-append (or (getenv "TMPDIR" #f)
+                                (getenv "TMP" #f)
+                                "/tmp")
+                            "/gerbil-lsp-test")))
+    (when (not (file-exists? dir))
+      (create-directory dir))
+    dir))
 
 ;; Helper: write string to a temp file and return an input port open in binary mode
 (def (make-binary-input-port-from-string str filename)

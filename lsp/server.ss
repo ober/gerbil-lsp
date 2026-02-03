@@ -18,6 +18,9 @@
 ;;; Output port for sending messages (stdout)
 (def *output-port* #f)
 
+;;; Mutex protecting write-message for concurrent access (main + diagnostics thread)
+(def *output-mutex* (make-mutex 'output))
+
 ;;; Register a request handler (expects a response)
 (def (register-request-handler! method handler)
   (hash-put! *request-handlers* method handler))
@@ -26,11 +29,18 @@
 (def (register-notification-handler! method handler)
   (hash-put! *notification-handlers* method handler))
 
-;;; Send a notification from server to client
+;;; Send a notification from server to client (thread-safe)
 (def (send-notification! method params)
   (when *output-port*
     (let ((msg (make-notification method params)))
-      (write-message *output-port* msg))))
+      (mutex-lock! *output-mutex*)
+      (with-catch
+        (lambda (e)
+          (mutex-unlock! *output-mutex*)
+          (raise e))
+        (lambda ()
+          (write-message *output-port* msg)
+          (mutex-unlock! *output-mutex*))))))
 
 ;;; LSP MessageType constants
 (def MessageType.Error   1)
@@ -42,6 +52,41 @@
 (def (send-log-message! type message)
   (send-notification! "window/logMessage"
     (hash ("type" type) ("message" message))))
+
+;;; Send a $/progress notification
+;;; kind: "begin", "report", or "end"
+(def (send-progress! token kind
+                     title: (title (void))
+                     message: (message (void))
+                     percentage: (percentage (void)))
+  (let ((value (hash ("kind" kind))))
+    (unless (void? title) (hash-put! value "title" title))
+    (unless (void? message) (hash-put! value "message" message))
+    (unless (void? percentage) (hash-put! value "percentage" percentage))
+    (send-notification! "$/progress"
+      (hash ("token" token) ("value" value)))))
+
+;;; Send a request from server to client (thread-safe)
+;;; Note: This is fire-and-forget; we don't track the response.
+(def *next-server-request-id* 0)
+(def (send-request! method params)
+  (when *output-port*
+    (let* ((id (begin (set! *next-server-request-id*
+                        (+ *next-server-request-id* 1))
+                      *next-server-request-id*))
+           (msg (json-object->string
+                  (hash ("jsonrpc" "2.0")
+                        ("id" id)
+                        ("method" method)
+                        ("params" params)))))
+      (mutex-lock! *output-mutex*)
+      (with-catch
+        (lambda (e)
+          (mutex-unlock! *output-mutex*)
+          (raise e))
+        (lambda ()
+          (write-message *output-port* msg)
+          (mutex-unlock! *output-mutex*))))))
 
 ;;; Main server loop — reads from stdin, dispatches, writes to stdout
 (def (start-server (input-port (current-input-port))

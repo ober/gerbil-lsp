@@ -108,8 +108,13 @@
           (when (or (not prefix) (string-prefix? prefix name))
             (add-item! (hash ("label" name)
                              ("kind" CompletionItemKind.Function)
-                             ("detail" mod))))))
+                             ("detail" mod)
+                             ("data" (hash ("module" mod)
+                                           ("name" name))))))))
       *stdlib-symbols*)
+
+    ;; Snippet completions
+    (for-each add-item! (snippet-completions prefix))
     result))
 
 ;;; Convert a sym-info to a CompletionItem
@@ -231,3 +236,40 @@
       (char-numeric? c)
       (memv c '(#\- #\_ #\! #\? #\* #\+ #\/ #\< #\> #\= #\. #\: #\#
                 #\% #\& #\^ #\~))))
+
+;;; Snippet templates for common Gerbil forms
+(def *snippet-templates*
+  '(("defstruct" "(defstruct ${1:name} (${2:fields})\n  transparent: #t)" "Define a struct type")
+    ("defclass" "(defclass ${1:name} (${2:fields})\n  constructor: :init!)" "Define a class type")
+    ("def-fn" "(def (${1:name} ${2:args})\n  ${0:body})" "Define a function")
+    ("let" "(let ((${1:var} ${2:val}))\n  ${0:body})" "Let binding")
+    ("let*" "(let* ((${1:var} ${2:val}))\n  ${0:body})" "Sequential let binding")
+    ("match" "(match ${1:expr}\n  (${2:pattern} ${0:body}))" "Pattern match")
+    ("test-suite" "(test-suite \"${1:name}\"\n  (test-case \"${2:case}\"\n    (check ${0:expr} => expected)))" "Test suite")
+    ("test-case" "(test-case \"${1:name}\"\n  (check ${0:expr} => expected))" "Test case")
+    ("cond" "(cond\n  (${1:test} ${2:expr})\n  (else ${0:default}))" "Conditional")
+    ("lambda" "(lambda (${1:args})\n  ${0:body})" "Lambda expression")
+    ("import" "(import ${0:module})" "Import module")
+    ("export" "(export #t)" "Export all")))
+
+;;; Get snippet completions matching a prefix
+(def (snippet-completions prefix)
+  (let ((result '()))
+    (for-each
+      (lambda (entry)
+        (let ((name (car entry))
+              (template (cadr entry))
+              (doc (caddr entry)))
+          (when (or (not prefix) (string-prefix? prefix name))
+            (set! result
+              (cons (hash ("label" name)
+                          ("kind" CompletionItemKind.Snippet)
+                          ("detail" "snippet")
+                          ("insertText" template)
+                          ("insertTextFormat" InsertTextFormat.Snippet)
+                          ("documentation"
+                           (hash ("kind" MarkupKind.Markdown)
+                                 ("value" doc))))
+                    result)))))
+      *snippet-templates*)
+    result))

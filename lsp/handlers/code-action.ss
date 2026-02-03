@@ -38,7 +38,10 @@
         ;; Offer "add missing import" based on diagnostics
         (let ((diags (hash-ref context "diagnostics" [])))
           (let ((import-actions (make-add-import-actions uri text diags)))
-            (set! actions (append actions import-actions))))
+            (set! actions (append actions import-actions)))
+          ;; Offer "remove unused import" for unused-import diagnostics
+          (let ((unused-actions (make-remove-unused-import-actions uri text diags)))
+            (set! actions (append actions unused-actions))))
         (list->vector actions))
       [])))
 
@@ -241,4 +244,71 @@
   (if (null? (cdr lst))
     (car lst)
     (last-elem (cdr lst))))
+
+;;; Create "Remove unused import" code actions from diagnostics
+(def (make-remove-unused-import-actions uri text diags)
+  (let ((actions '()))
+    (for-each
+      (lambda (diag)
+        (when (hash-table? diag)
+          (let ((code (hash-ref diag "code" ""))
+                (msg (hash-ref diag "message" "")))
+            (when (string=? code "unused-import")
+              ;; Extract the import name from the message
+              (let ((import-name (extract-unused-import-name msg)))
+                (when import-name
+                  (let ((range (hash-ref diag "range" #f)))
+                    (when range
+                      (let* ((start (hash-ref range "start" (hash)))
+                             (line (hash-ref start "line" 0))
+                             (line-text (text-line-at text line))
+                             ;; Find the full extent of this import line/spec
+                             (edit (make-remove-import-edit uri text import-name line)))
+                        (when edit
+                          (set! actions
+                            (cons (hash
+                                    ("title" (format "Remove unused import: ~a" import-name))
+                                    ("kind" CodeActionKind.QuickFix)
+                                    ("diagnostics" (vector diag))
+                                    ("edit" edit))
+                                  actions))))))))))))
+      (if (vector? diags) (vector->list diags) '()))
+    actions))
+
+;;; Extract the import name from an "Unused import: X" message
+(def (extract-unused-import-name msg)
+  (if (string-prefix? "Unused import: " msg)
+    (substring msg 15 (string-length msg))
+    #f))
+
+;;; Create a workspace edit that removes an import spec from the file
+(def (make-remove-import-edit uri text import-name line)
+  (let* ((lines (string-split-lines text))
+         (line-text (if (< line (length lines))
+                      (list-ref lines line)
+                      ""))
+         ;; Check if this line is a standalone import like (import :foo/bar)
+         ;; or part of a multi-spec import
+         (trimmed (string-trim-whitespace line-text)))
+    ;; Simple case: the import spec is on its own line within a multi-line import
+    ;; Remove the entire line
+    (if (and (> line 0) (< line (length lines)))
+      (hash ("changes"
+             (hash (uri
+                    (vector
+                      (make-text-edit
+                        (make-lsp-range line 0 (+ line 1) 0)
+                        ""))))))
+      #f)))
+
+;;; String split into lines helper
+(def (string-split-lines text)
+  (let loop ((i 0) (start 0) (lines '()))
+    (cond
+      ((>= i (string-length text))
+       (reverse (cons (substring text start i) lines)))
+      ((char=? (string-ref text i) #\newline)
+       (loop (+ i 1) (+ i 1) (cons (substring text start i) lines)))
+      (else
+       (loop (+ i 1) start lines)))))
 

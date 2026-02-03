@@ -1,5 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Document state management — track open document text and metadata
+(import ../util/position)
 (export #t)
 
 ;;; Document record
@@ -60,3 +61,27 @@
          (loop (+ i 1) (+ i 1) (cons (substring text start i) lines)))
         (else
          (loop (+ i 1) start lines))))))
+
+;;; Apply an incremental (range) change to a document.
+;;; The range specifies start/end line/col; text is the replacement.
+(def (document-apply-incremental-change doc range-change version)
+  (let* ((text (document-text doc))
+         (range (hash-ref range-change "range" #f))
+         (new-text (hash-ref range-change "text" "")))
+    (if (not range)
+      ;; No range means full replacement
+      (document-apply-full-change doc new-text version)
+      (let* ((start (hash-ref range "start" (hash)))
+             (end (hash-ref range "end" (hash)))
+             (start-line (hash-ref start "line" 0))
+             (start-char (hash-ref start "character" 0))
+             (end-line (hash-ref end "line" 0))
+             (end-char (hash-ref end "character" 0))
+             (start-offset (line-col->offset text start-line start-char))
+             (end-offset (line-col->offset text end-line end-char))
+             (result (string-append
+                       (substring text 0 start-offset)
+                       new-text
+                       (substring text end-offset (string-length text)))))
+        (make-document (document-uri doc) version result
+                       (document-language-id doc))))))

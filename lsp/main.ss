@@ -22,7 +22,13 @@
         ./handlers/selection
         ./handlers/links
         ./handlers/semantic-tokens
-        ./handlers/inlay-hints)
+        ./handlers/inlay-hints
+        ./handlers/call-hierarchy
+        ./handlers/implementation
+        ./handlers/type-hierarchy
+        ./handlers/code-lens
+        ./handlers/on-type-formatting
+        ./handlers/pull-diagnostics)
 (export main)
 
 (def (main . args)
@@ -66,8 +72,11 @@
   ;; Workspace
   (register-notification-handler! "workspace/didChangeConfiguration"
     handle-did-change-configuration)
+  (register-notification-handler! "workspace/didChangeWatchedFiles"
+    handle-did-change-watched-files)
   ;; Language features
   (register-request-handler! "textDocument/completion" handle-completion)
+  (register-request-handler! "completionItem/resolve" handle-completion-resolve)
   (register-request-handler! "textDocument/hover" handle-hover)
   (register-request-handler! "textDocument/definition" handle-definition)
   (register-request-handler! "textDocument/references" handle-references)
@@ -89,4 +98,22 @@
   (register-request-handler! "textDocument/rangeFormatting" handle-range-formatting)
   ;; Inlay hints
   (register-request-handler! "textDocument/inlayHint" handle-inlay-hint)
+  ;; Call hierarchy
+  (register-request-handler! "textDocument/prepareCallHierarchy"
+    handle-prepare-call-hierarchy)
+  (register-request-handler! "callHierarchy/incomingCalls" handle-incoming-calls)
+  (register-request-handler! "callHierarchy/outgoingCalls" handle-outgoing-calls)
+  ;; Go to implementation
+  (register-request-handler! "textDocument/implementation" handle-implementation)
+  ;; Type hierarchy
+  (register-request-handler! "textDocument/prepareTypeHierarchy"
+    handle-prepare-type-hierarchy)
+  (register-request-handler! "typeHierarchy/supertypes" handle-supertypes)
+  (register-request-handler! "typeHierarchy/subtypes" handle-subtypes)
+  ;; Code lenses
+  (register-request-handler! "textDocument/codeLens" handle-code-lens)
+  ;; On-type formatting
+  (register-request-handler! "textDocument/onTypeFormatting" handle-on-type-formatting)
+  ;; Pull diagnostics
+  (register-request-handler! "textDocument/diagnostic" handle-document-diagnostic)
   (lsp-info "all handlers registered"))

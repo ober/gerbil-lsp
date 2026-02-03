@@ -35,20 +35,46 @@
 (def (handle-initialized params)
   (set-initialized! #t)
   (lsp-info "server initialized")
+  ;; Register for file watchers
+  (register-file-watchers!)
   ;; Index all .ss files in the workspace for symbols
   (let ((root (workspace-root)))
     (when root
-      (send-log-message! MessageType.Info
-        (format "Indexing workspace: ~a" root))
-      (with-catch
-        (lambda (e)
-          (lsp-warn "workspace indexing failed: ~a" e)
-          (send-log-message! MessageType.Error
-            (format "Workspace indexing failed: ~a" e)))
-        (lambda ()
-          (index-workspace! root)
-          (send-log-message! MessageType.Info "Workspace indexing complete")))))
+      ;; Create progress token
+      (let ((progress-token "indexing"))
+        (send-request! "window/workDoneProgress/create"
+          (hash ("token" progress-token)))
+        (send-progress! progress-token "begin"
+          title: "Indexing workspace"
+          message: (format "Scanning ~a" root)
+          percentage: 0)
+        (with-catch
+          (lambda (e)
+            (lsp-warn "workspace indexing failed: ~a" e)
+            (send-progress! progress-token "end" message: "Indexing failed")
+            (send-log-message! MessageType.Error
+              (format "Workspace indexing failed: ~a" e)))
+          (lambda ()
+            (index-workspace-with-progress! root progress-token)
+            (send-progress! progress-token "end" message: "Indexing complete")
+            (send-log-message! MessageType.Info "Workspace indexing complete"))))))
   (void))
+
+;;; Register for file watcher events (dynamic registration)
+(def (register-file-watchers!)
+  (with-catch
+    (lambda (e) (lsp-debug "file watcher registration failed: ~a" e))
+    (lambda ()
+      (send-request! "client/registerCapability"
+        (hash ("registrations"
+               (vector
+                 (hash ("id" "gerbil-file-watcher")
+                       ("method" "workspace/didChangeWatchedFiles")
+                       ("registerOptions"
+                        (hash ("watchers"
+                               (vector
+                                 (hash ("globPattern" "**/*.ss")
+                                       ("kind" 7)))))))))))))) ;; 7 = Create|Change|Delete
 
 ;;; Handle "shutdown" request
 ;;; Prepare for exit, return null

@@ -11,18 +11,53 @@
         ../state
         ../server
         ../analysis/document
+        ../analysis/parser
+        ../analysis/symbols
         ../analysis/module)
 (export #t)
 
 ;;; Publish diagnostics for a document (full: parse + compile)
-;;; Called on save — runs gxc and caches the results
+;;; Called on save — spawns a background thread for gxc
 (def (publish-diagnostics-for uri)
   (let ((doc (get-document uri)))
     (when doc
-      (let ((diags (collect-diagnostics uri doc)))
-        (send-notification! "textDocument/publishDiagnostics"
-          (hash ("uri" uri)
-                ("diagnostics" (list->vector diags))))))))
+      (let* ((text (document-text doc))
+             (file-path (uri->file-path uri))
+             (parse-diags (parse-diagnostics text)))
+        ;; Publish parse diagnostics immediately with cached gxc
+        (let ((cached-gxc (get-gxc-diagnostics uri)))
+          (send-notification! "textDocument/publishDiagnostics"
+            (hash ("uri" uri)
+                  ("diagnostics"
+                   (list->vector (append parse-diags cached-gxc))))))
+        ;; Spawn background thread for gxc diagnostics
+        (spawn-gxc-diagnostics-thread! uri file-path text parse-diags)))))
+
+;;; Spawn a background thread to run gxc diagnostics
+(def (spawn-gxc-diagnostics-thread! uri file-path text parse-diags)
+  (mutex-lock! (diagnostics-mutex))
+  ;; Cancel previous diagnostics thread if running
+  (let ((prev (diagnostics-thread)))
+    (when prev
+      (with-catch (lambda (e) (void))
+        (lambda () (thread-terminate! prev)))))
+  (let ((t (spawn
+              (lambda ()
+                (with-catch
+                  (lambda (e)
+                    (lsp-debug "async gxc diagnostics failed: ~a" e))
+                  (lambda ()
+                    (let ((gxc-diags (compile-diagnostics file-path text))
+                          (unused-diags (detect-unused-imports uri text)))
+                      ;; Cache and publish combined results
+                      (set-gxc-diagnostics! uri gxc-diags)
+                      (send-notification! "textDocument/publishDiagnostics"
+                        (hash ("uri" uri)
+                              ("diagnostics"
+                               (list->vector
+                                 (append parse-diags gxc-diags unused-diags))))))))))))
+    (set-diagnostics-thread! t)
+    (mutex-unlock! (diagnostics-mutex))))
 
 ;;; Publish parse-only diagnostics for a document (fast, no gxc)
 ;;; Used on didChange for immediate feedback while typing.
@@ -121,8 +156,9 @@
       (lsp-debug "gxc diagnostics failed: ~a" e)
       '())
     (lambda ()
-      (let* ((proc (open-process
-                      (list path: "gxc"
+      (let* ((gxc-path (or (get-config "gxc-path") "gxc"))
+             (proc (open-process
+                      (list path: gxc-path
                             arguments: (list "-S" file-path)
                             stderr-redirection: #t
                             stdout-redirection: #t)))
@@ -196,4 +232,93 @@
       ((char=? (string-ref str i) #\:)
        (loop (+ i 1) (+ i 1) (cons (substring str start i) parts)))
       (else (loop (+ i 1) start parts)))))
+
+;;; Detect unused imports in a file
+;;; Returns Warning-severity diagnostics for each unused import symbol
+(def (detect-unused-imports uri text)
+  (with-catch
+    (lambda (e)
+      (lsp-debug "detect-unused-imports failed: ~a" e)
+      '())
+    (lambda ()
+      (let* ((forms (parse-source text))
+             (import-specs (extract-imports forms))
+             (lines (string-split-lines text))
+             ;; Get the text after imports for usage checking
+             (non-import-text (get-non-import-text forms text))
+             (diags '()))
+        ;; Check each simple symbol import
+        (for-each
+          (lambda (spec)
+            (when (symbol? spec)
+              (let ((spec-str (symbol->string spec)))
+                ;; Skip relative imports and complex specs
+                (unless (or (string-prefix? "./" spec-str)
+                            (string-prefix? "../" spec-str))
+                  ;; Find the line where this import appears
+                  (let ((import-line (find-import-line-for-spec spec text)))
+                    (when import-line
+                      ;; Check if any symbol from this module is used
+                      (let ((module-used? (module-symbols-used? spec non-import-text uri)))
+                        (unless module-used?
+                          (set! diags
+                            (cons (make-diagnostic
+                                    (make-lsp-range import-line 0 import-line 1)
+                                    (format "Unused import: ~a" spec)
+                                    severity: DiagnosticSeverity.Warning
+                                    source: "gerbil-lsp"
+                                    code: "unused-import")
+                                  diags))))))))))
+          import-specs)
+        diags))))
+
+;;; Get the text of the file excluding import forms
+(def (get-non-import-text forms text)
+  (let ((lines (string-split-lines text))
+        (import-lines (make-hash-table)))
+    ;; Mark all lines that are part of import forms
+    (for-each
+      (lambda (lf)
+        (let ((form (located-form-form lf)))
+          (when (and (pair? form) (eq? (car form) 'import))
+            (let loop ((l (located-form-line lf)))
+              (when (<= l (located-form-end-line lf))
+                (hash-put! import-lines l #t)
+                (loop (+ l 1)))))))
+      forms)
+    ;; Collect non-import lines
+    (let ((out (open-output-string)))
+      (let loop ((i 0) (ls lines))
+        (unless (null? ls)
+          (unless (hash-key? import-lines i)
+            (display (car ls) out)
+            (newline out))
+          (loop (+ i 1) (cdr ls))))
+      (get-output-string out))))
+
+;;; Check if any symbol from a module is used in the non-import text
+(def (module-symbols-used? module-spec non-import-text uri)
+  (with-catch
+    (lambda (e) #t)  ;; On error, assume it's used
+    (lambda ()
+      (let ((file-path (uri->file-path uri)))
+        (let ((exports (get-or-resolve-module-exports module-spec file-path)))
+          (if (null? exports)
+            #t  ;; Can't resolve — assume used
+            (let loop ((syms exports))
+              (if (null? syms) #f
+                (let ((name (sym-info-name (car syms))))
+                  (if (string-contains non-import-text name)
+                    #t
+                    (loop (cdr syms))))))))))))
+
+;;; Find the line number where a given import spec appears
+(def (find-import-line-for-spec spec text)
+  (let ((spec-str (format "~a" spec))
+        (lines (string-split-lines text)))
+    (let loop ((ls lines) (n 0))
+      (if (null? ls) #f
+        (if (string-contains (car ls) spec-str)
+          n
+          (loop (cdr ls) (+ n 1)))))))
 

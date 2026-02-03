@@ -117,3 +117,44 @@
 
 (def (set-module-exports! module-path exports)
   (hash-put! *module-cache* module-path exports))
+
+;;; --- Diagnostics thread state ---
+(def *diagnostics-thread* #f)
+(def *diagnostics-mutex* (make-mutex 'diagnostics))
+
+(def (diagnostics-thread) *diagnostics-thread*)
+(def (set-diagnostics-thread! t) (set! *diagnostics-thread* t))
+(def (diagnostics-mutex) *diagnostics-mutex*)
+
+;;; --- Configuration ---
+(def *server-config*
+  (hash ("gxc-path" "gxc")
+        ("diagnostics-on-save" #t)
+        ("log-level" "info")
+        ("format-line-width" 80)))
+
+(def (get-config key)
+  (hash-ref *server-config* key #f))
+
+(def (set-config! key value)
+  (hash-put! *server-config* key value))
+
+(def (merge-config! settings)
+  (when (hash-table? settings)
+    (hash-for-each
+      (lambda (k v)
+        (hash-put! *server-config* k v))
+      settings)))
+
+;;; --- Module cache timestamps ---
+(def *module-cache-timestamps* (make-hash-table))
+
+(def (get-module-cache-timestamp module-path)
+  (hash-ref *module-cache-timestamps* module-path #f))
+
+(def (set-module-cache-timestamp! module-path ts)
+  (hash-put! *module-cache-timestamps* module-path ts))
+
+(def (clear-module-cache-for! module-path)
+  (hash-remove! *module-cache* module-path)
+  (hash-remove! *module-cache-timestamps* module-path))
