@@ -75,6 +75,8 @@
     handle-did-change-configuration)
   (register-notification-handler! "workspace/didChangeWatchedFiles"
     handle-did-change-watched-files)
+  (register-notification-handler! "workspace/didChangeWorkspaceFolders"
+    handle-did-change-workspace-folders)
   ;; Language features
   (register-request-handler! "textDocument/completion" handle-completion)
   (register-request-handler! "completionItem/resolve" handle-completion-resolve)

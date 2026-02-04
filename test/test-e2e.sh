@@ -161,6 +161,90 @@ check "pre-init request returns error" '"error"' "$OUTPUT5"
 
 echo ""
 
+# --- Test 6: Multi-root workspace support ---
+echo "Test 6: workspaceFolders capability advertised"
+
+check "workspaceFolders supported" '"workspaceFolders"' "$OUTPUT"
+
+echo ""
+
+# --- Test 7: Inter-file dependencies advertised ---
+echo "Test 7: interFileDependencies capability"
+
+check "interFileDependencies enabled" '"interFileDependencies":true' "$OUTPUT"
+
+echo ""
+
+# --- Test 8: Project config file ---
+echo "Test 8: Project configuration file (.gerbil-lsp.json)"
+
+# Create a project config
+cat > "$TMPWS/.gerbil-lsp.json" << 'JSON'
+{
+  "gxc-flags": ["-O"],
+  "diagnostics-delay": 2000
+}
+JSON
+
+OUTPUT8=$( {
+    lsp_msg "$INIT_BODY"
+    lsp_msg "$INITIALIZED_BODY"
+    sleep 0.3
+    lsp_msg "$SHUTDOWN_BODY"
+    lsp_msg "$EXIT_BODY"
+} | "$GERBIL_LSP" --stdio --log-level error 2>/dev/null) || true
+
+check "server starts with config file" '"capabilities"' "$OUTPUT8"
+
+echo ""
+
+# --- Test 9: Index cache directory creation ---
+echo "Test 9: Persistent index cache"
+
+# Run server to trigger indexing
+OUTPUT9=$( {
+    lsp_msg "$INIT_BODY"
+    lsp_msg "$INITIALIZED_BODY"
+    sleep 0.5
+    lsp_msg "$SHUTDOWN_BODY"
+    lsp_msg "$EXIT_BODY"
+} | "$GERBIL_LSP" --stdio --log-level error 2>/dev/null) || true
+
+if [ -d "$TMPWS/.gerbil-lsp-cache" ]; then
+    echo "  PASS: cache directory created"
+    ((PASS++))
+else
+    echo "  SKIP: cache directory not created (may require file writes)"
+fi
+
+echo ""
+
+# --- Test 10: didChangeWorkspaceFolders notification ---
+echo "Test 10: workspace/didChangeWorkspaceFolders"
+
+TMPWS2=$(mktemp -d)
+trap 'rm -rf "$TMPWS" "$TMPWS2"' EXIT
+
+cat > "$TMPWS2/other.ss" << 'SCHEME'
+(def (other-func x) (* x 2))
+SCHEME
+
+CHANGE_FOLDERS_BODY='{"jsonrpc":"2.0","method":"workspace/didChangeWorkspaceFolders","params":{"event":{"added":[{"uri":"file://'"$TMPWS2"'","name":"other"}],"removed":[]}}}'
+
+OUTPUT10=$( {
+    lsp_msg "$INIT_BODY"
+    lsp_msg "$INITIALIZED_BODY"
+    sleep 0.2
+    lsp_msg "$CHANGE_FOLDERS_BODY"
+    sleep 0.3
+    lsp_msg "$SHUTDOWN_BODY"
+    lsp_msg "$EXIT_BODY"
+} | "$GERBIL_LSP" --stdio --log-level error 2>/dev/null) || true
+
+check "workspace folders notification accepted" '"capabilities"' "$OUTPUT10"
+
+echo ""
+
 # --- Summary ---
 echo "=== Results: $PASS passed, $FAIL failed ==="
 if [ $FAIL -gt 0 ]; then

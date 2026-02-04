@@ -16,6 +16,7 @@ install: build
 
 test: build
 	@export GERBIL_PATH=$(CURDIR)/.gerbil; \
+	export GERBIL_LOADPATH=$(CURDIR)/.gerbil/lib; \
 	for f in test/string-test.ss test/position-test.ss test/types-test.ss \
 	          test/document-test.ss test/jsonrpc-test.ss test/transport-test.ss \
 	          test/parser-test.ss test/symbols-test.ss test/module-test.ss \
@@ -26,10 +27,14 @@ test: build
 	          test/rename-test.ss test/completion-test.ss test/signature-test.ss \
 	          test/folding-test.ss test/selection-test.ss test/links-test.ss \
 	          test/index-test.ss test/semantic-tokens-test.ss \
-	          test/inlay-hints-test.ss; do \
+	          test/inlay-hints-test.ss test/cache-test.ss \
+	          test/project-config-test.ss; do \
 		echo "Running $$f..."; \
 		gxi $$f || exit 1; \
 	done; \
 	echo "All tests passed."
 
-.PHONY: build clean install test
+test-e2e: build
+	bash test/test-e2e.sh
+
+.PHONY: build clean install test test-e2e

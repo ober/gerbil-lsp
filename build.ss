@@ -15,6 +15,8 @@
     "lsp/analysis/parser"
     "lsp/analysis/symbols"
     "lsp/analysis/module"
+    "lsp/analysis/cache"
+    "lsp/analysis/project-config"
     "lsp/analysis/index"
     "lsp/analysis/completion-data"
     "lsp/handlers/lifecycle"

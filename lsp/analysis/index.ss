@@ -12,57 +12,105 @@
         ./document
         ./parser
         ./symbols
-        ./module)
+        ./module
+        ./cache)
 (export #t)
 
 ;;; Index all .ss files in the workspace
+;;; First tries to load from cache, then indexes remaining files
 (def (index-workspace! root)
   (when root
     (lsp-info "indexing workspace: ~a" root)
-    (let ((files (find-gerbil-files root)))
-      (lsp-info "found ~a Gerbil files" (length files))
-      (for-each
-        (lambda (path)
-          (with-catch
-            (lambda (e)
-              (lsp-debug "failed to index ~a: ~a" path e))
-            (lambda ()
-              (index-file-by-path! path))))
-        files))))
+    ;; Try to load from cache first
+    (let ((cached-count (load-index-cache! root)))
+      (load-deps-cache! root)
+      (let ((files (find-gerbil-files root))
+            (indexed 0))
+        (lsp-info "found ~a Gerbil files, ~a from cache" (length files) cached-count)
+        (for-each
+          (lambda (path)
+            (let ((uri (path->uri path)))
+              ;; Only index files not in cache
+              (when (null? (get-file-symbols uri))
+                (with-catch
+                  (lambda (e)
+                    (lsp-debug "failed to index ~a: ~a" path e))
+                  (lambda ()
+                    (index-file-by-path! path)
+                    (set! indexed (+ indexed 1)))))))
+          files)
+        (lsp-info "indexed ~a new files" indexed)
+        ;; Save updated cache
+        (save-index-cache! root)
+        (save-deps-cache! root)))))
 
 ;;; Index workspace with progress reporting
+;;; Index workspace with progress reporting
+;;; Uses cache for unchanged files
 (def (index-workspace-with-progress! root progress-token)
   (when root
     (lsp-info "indexing workspace: ~a" root)
-    (let ((files (find-gerbil-files root)))
-      (let ((total (length files))
-            (done 0))
-        (lsp-info "found ~a Gerbil files" total)
-        (for-each
-          (lambda (path)
-            (with-catch
-              (lambda (e)
-                (lsp-debug "failed to index ~a: ~a" path e))
-              (lambda ()
-                (index-file-by-path! path)))
-            (set! done (+ done 1))
-            (when (> total 0)
-              (let ((pct (min 100 (quotient (* done 100) total))))
-                (send-progress! progress-token "report"
-                  message: (format "~a/~a files" done total)
-                  percentage: pct))))
-          files)))))
+    ;; Load cache first
+    (let ((cached-count (load-index-cache! root)))
+      (load-deps-cache! root)
+      (let ((files (find-gerbil-files root)))
+        (let ((total (length files))
+              (done 0)
+              (indexed 0))
+          (lsp-info "found ~a Gerbil files, ~a from cache" total cached-count)
+          (for-each
+            (lambda (path)
+              (let ((uri (path->uri path)))
+                ;; Only index files not in cache
+                (if (null? (get-file-symbols uri))
+                  (with-catch
+                    (lambda (e)
+                      (lsp-debug "failed to index ~a: ~a" path e))
+                    (lambda ()
+                      (index-file-by-path! path)
+                      (set! indexed (+ indexed 1))))
+                  (void)))
+              (set! done (+ done 1))
+              (when (> total 0)
+                (let ((pct (min 100 (quotient (* done 100) total))))
+                  (send-progress! progress-token "report"
+                    message: (format "~a/~a files (~a indexed)" done total indexed)
+                    percentage: pct))))
+            files)
+          (lsp-info "indexed ~a new files" indexed)
+          ;; Save updated cache
+          (save-index-cache! root)
+          (save-deps-cache! root))))))
 
 ;;; Index a single file by its filesystem path
+;;; Extracts symbols and tracks import dependencies
 (def (index-file-by-path! path)
   (let* ((uri (path->uri path))
          (text (read-file-string path))
          (forms (parse-source text))
-         (syms (extract-symbols forms)))
+         (syms (extract-symbols forms))
+         (imports (extract-imports forms)))
     (set-file-symbols! uri syms)
     ;; Cache text for workspace-wide references/rename
     (set-file-text! uri text)
+    ;; Track import dependencies
+    (let ((import-uris (resolve-import-uris imports path)))
+      (set-file-imports! uri import-uris))
     (lsp-debug "indexed ~a: ~a symbols" path (length syms))))
+
+;;; Resolve import specs to URIs for dependency tracking
+(def (resolve-import-uris import-specs file-path)
+  (let ((result '()))
+    (for-each
+      (lambda (spec)
+        (with-catch
+          (lambda (e) (void))
+          (lambda ()
+            (let ((resolved (resolve-import-spec spec file-path)))
+              (when resolved
+                (set! result (cons (path->uri resolved) result)))))))
+      import-specs)
+    result))
 
 ;;; Find all .ss files under a directory recursively
 (def (find-gerbil-files root)

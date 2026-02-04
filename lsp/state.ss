@@ -6,6 +6,7 @@
 (def *initialized* #f)
 (def *shutdown-requested* #f)
 (def *workspace-root* #f)
+(def *workspace-folders* '())  ;; List of workspace folder paths (multi-root)
 (def *client-capabilities* #f)
 
 ;;; Document store: uri (string) → document record (hash table)
@@ -57,6 +58,24 @@
 
 (def (set-workspace-root! root)
   (set! *workspace-root* root))
+
+(def (workspace-folders)
+  *workspace-folders*)
+
+(def (set-workspace-folders! folders)
+  (set! *workspace-folders* folders))
+
+(def (add-workspace-folder! folder)
+  (unless (member folder *workspace-folders*)
+    (set! *workspace-folders* (cons folder *workspace-folders*))))
+
+(def (remove-workspace-folder! folder)
+  (set! *workspace-folders* (filter (lambda (f) (not (string=? f folder))) *workspace-folders*)))
+
+(def (all-workspace-roots)
+  "Returns all workspace roots including the primary and multi-root folders"
+  (let ((roots (if *workspace-root* (list *workspace-root*) '())))
+    (append roots (filter (lambda (f) (not (member f roots))) *workspace-folders*))))
 
 (def (client-capabilities)
   *client-capabilities*)

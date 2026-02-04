@@ -4,26 +4,26 @@ A Language Server Protocol (LSP) implementation for [Gerbil Scheme](https://cons
 
 ## Features
 
-| Feature | LSP Method | Description |
-|---------|------------|-------------|
-| Diagnostics | `textDocument/publishDiagnostics` | Compilation errors via `gxc` and parse error detection, debounced on change |
-| Completion | `textDocument/completion` | Symbols from current file, workspace, and Gerbil keywords with auto-import |
-| Hover | `textDocument/hover` | Symbol info with kind, signature, and source location |
-| Go to Definition | `textDocument/definition` | Jump to symbol definition across workspace and stdlib |
-| Find References | `textDocument/references` | Locate all occurrences of a symbol |
-| Document Symbols | `textDocument/documentSymbol` | Outline view of definitions in current file |
-| Workspace Symbols | `workspace/symbol` | Search definitions across all indexed files |
-| Rename | `textDocument/rename` | Scope-aware rename, skips strings and comments |
-| Formatting | `textDocument/formatting` | Format via Gambit's `pretty-print` |
-| Signature Help | `textDocument/signatureHelp` | Function signatures while typing arguments |
-| Code Action | `textDocument/codeAction` | Quick fixes and refactoring actions |
-| Code Lens | `textDocument/codeLens` | Inline actions (run test, show references) |
-| Execute Command | `workspace/executeCommand` | Run test files, show reference counts |
-| Document Highlight | `textDocument/documentHighlight` | Highlight occurrences of symbol under cursor |
-| Folding Range | `textDocument/foldingRange` | Code folding for top-level forms |
-| Selection Range | `textDocument/selectionRange` | Expand/shrink selection by syntax |
-| Document Link | `textDocument/documentLink` | Clickable module import paths |
-| Inlay Hints | `textDocument/inlayHint` | Inline type/parameter hints |
+| Feature            | LSP Method                        | Description                                                                 |
+|--------------------|-----------------------------------|-----------------------------------------------------------------------------|
+| Diagnostics        | `textDocument/publishDiagnostics` | Compilation errors via `gxc` and parse error detection, debounced on change |
+| Completion         | `textDocument/completion`         | Symbols from current file, workspace, and Gerbil keywords with auto-import  |
+| Hover              | `textDocument/hover`              | Symbol info with kind, signature, and source location                       |
+| Go to Definition   | `textDocument/definition`         | Jump to symbol definition across workspace and stdlib                       |
+| Find References    | `textDocument/references`         | Locate all occurrences of a symbol                                          |
+| Document Symbols   | `textDocument/documentSymbol`     | Outline view of definitions in current file                                 |
+| Workspace Symbols  | `workspace/symbol`                | Search definitions across all indexed files                                 |
+| Rename             | `textDocument/rename`             | Scope-aware rename, skips strings and comments                              |
+| Formatting         | `textDocument/formatting`         | Format via Gambit's `pretty-print`                                          |
+| Signature Help     | `textDocument/signatureHelp`      | Function signatures while typing arguments                                  |
+| Code Action        | `textDocument/codeAction`         | Quick fixes and refactoring actions                                         |
+| Code Lens          | `textDocument/codeLens`           | Inline actions (run test, show references)                                  |
+| Execute Command    | `workspace/executeCommand`        | Run test files, show reference counts                                       |
+| Document Highlight | `textDocument/documentHighlight`  | Highlight occurrences of symbol under cursor                                |
+| Folding Range      | `textDocument/foldingRange`       | Code folding for top-level forms                                            |
+| Selection Range    | `textDocument/selectionRange`     | Expand/shrink selection by syntax                                           |
+| Document Link      | `textDocument/documentLink`       | Clickable module import paths                                               |
+| Inlay Hints        | `textDocument/inlayHint`          | Inline type/parameter hints                                                 |
 
 ### Symbol Recognition
 
@@ -199,16 +199,16 @@ lsp/
 
 The server maintains global state in `lsp/state.ss`:
 
-| State | Type | Description |
-|-------|------|-------------|
-| `*documents*` | `uri -> document` | Open document text buffers |
-| `*symbol-index*` | `uri -> sym-info list` | Extracted symbols per file |
-| `*module-cache*` | `module-path -> exports` | Cached module export lists |
-| `*workspace-root*` | `string` | Workspace root directory |
-| `*last-completion-uri*` | `string` | URI of last completion request (for resolve) |
-| `*debounce-thread*` | `thread` | Active debounced diagnostics thread |
-| `*file-text-cache*` | `uri -> string` | Cached file contents for analysis |
-| `*gxc-diagnostics-cache*` | `uri -> diagnostics` | Cached gxc compilation results |
+| State                     | Type                     | Description                                  |
+|---------------------------|--------------------------|----------------------------------------------|
+| `*documents*`             | `uri -> document`        | Open document text buffers                   |
+| `*symbol-index*`          | `uri -> sym-info list`   | Extracted symbols per file                   |
+| `*module-cache*`          | `module-path -> exports` | Cached module export lists                   |
+| `*workspace-root*`        | `string`                 | Workspace root directory                     |
+| `*last-completion-uri*`   | `string`                 | URI of last completion request (for resolve) |
+| `*debounce-thread*`       | `thread`                 | Active debounced diagnostics thread          |
+| `*file-text-cache*`       | `uri -> string`          | Cached file contents for analysis            |
+| `*gxc-diagnostics-cache*` | `uri -> diagnostics`     | Cached gxc compilation results               |
 
 Documents are re-analyzed on every change (full text sync). The symbol index is updated incrementally as files are opened and modified.
 
@@ -216,18 +216,18 @@ Documents are re-analyzed on every change (full text sync). The symbol index is 
 
 The server uses these Gerbil standard library modules:
 
-| Module | Purpose |
-|--------|---------|
-| `:std/text/json` | JSON serialization |
-| `:std/format` | String formatting |
-| `:std/sugar` | `when-let`, `with-catch`, etc. |
-| `:std/iter` | `for`, `for/collect`, `for-each` |
-| `:std/error` | Exception types |
-| `:std/cli/getopt` | CLI argument parsing |
-| `:std/misc/process` | Spawning `gxc` for diagnostics |
-| `:std/misc/ports` | File reading utilities |
-| `:std/misc/string` | String utilities |
-| `:std/misc/path` | Path manipulation |
+| Module              | Purpose                          |
+|---------------------|----------------------------------|
+| `:std/text/json`    | JSON serialization               |
+| `:std/format`       | String formatting                |
+| `:std/sugar`        | `when-let`, `with-catch`, etc.   |
+| `:std/iter`         | `for`, `for/collect`, `for-each` |
+| `:std/error`        | Exception types                  |
+| `:std/cli/getopt`   | CLI argument parsing             |
+| `:std/misc/process` | Spawning `gxc` for diagnostics   |
+| `:std/misc/ports`   | File reading utilities           |
+| `:std/misc/string`  | String utilities                 |
+| `:std/misc/path`    | Path manipulation                |
 
 ## How It Works
 
@@ -305,6 +305,30 @@ Create a `.vscode/settings.json` or use a generic LSP client extension configure
 }
 ```
 
+## Project Configuration
+
+Create a `.gerbil-lsp.json` file in your workspace root to customize LSP behavior:
+
+```json
+{
+  "gxc-path": "/custom/path/to/gxc",
+  "gxc-flags": ["-O"],
+  "loadpath": ["./libs", "~/.gerbil/lib"],
+  "diagnostics-delay": 2000,
+  "disabled-features": ["unused-import-warnings"]
+}
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `gxc-path` | string | Path to gxc compiler (default: "gxc") |
+| `gxc-flags` | string[] | Extra flags to pass to gxc (e.g., "-O") |
+| `loadpath` | string[] | Directories to add to GERBIL_LOADPATH |
+| `diagnostics-delay` | number | Debounce delay for diagnostics in ms (default: 1500) |
+| `disabled-features` | string[] | Features to disable for this project |
+
+The server also reads `gerbil.pkg` to extract package name and dependencies.
+
 ## Development
 
 ### Clean and rebuild
@@ -346,10 +370,16 @@ gerbil-lsp/
 ## Known Limitations
 
 - **Full document sync only** -- the entire document text is sent on each change (no incremental sync yet)
-- **Formatting strips comments** -- `pretty-print` operates on S-expressions after `read`, which discards comments
-- **No incremental indexing** -- workspace symbols are only indexed from open documents, not scanned on startup
-- **Compile diagnostics use saved files** -- `gxc` runs on the filesystem copy; debounced on-change diagnostics will use stale data until the file is saved
-- **Rename is limited to open documents** -- closed files in the workspace are not updated
+- **No semantic type inference** -- analysis is purely syntactic; no cross-module type information
+
+## Recent Improvements
+
+- **Persistent index cache** -- workspace symbols are cached to `.gerbil-lsp-cache/` for fast startup
+- **Comment-preserving formatting** -- blank lines, comment lines, and inline comments are preserved
+- **Inter-file dependency tracking** -- when a file changes, dependents are automatically re-diagnosed
+- **Temp file diagnostics** -- unsaved buffer content can be diagnosed via temporary files
+- **Multi-root workspace support** -- `workspaceFolders` are fully supported with add/remove notifications
+- **Workspace-wide rename** -- renames apply to all indexed files, not just open documents
 
 ## License
 

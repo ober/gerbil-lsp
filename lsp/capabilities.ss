@@ -77,11 +77,14 @@
            ("moreTriggerCharacter" ["]" "\n"])))
     ;; Pull diagnostics
     ("diagnosticProvider"
-     (hash ("interFileDependencies" #f)
+     (hash ("interFileDependencies" #t)
            ("workspaceDiagnostics" #f)))
     ;; Execute command
     ("executeCommandProvider"
      (hash ("commands" ["gerbil-lsp.runTest" "gerbil-lsp.showReferences"])))
     ;; Workspace capabilities
     ("workspace"
-     (hash ("workDoneProgress" #t)))))
+     (hash ("workDoneProgress" #t)
+           ("workspaceFolders"
+            (hash ("supported" #t)
+                  ("changeNotifications" #t)))))))

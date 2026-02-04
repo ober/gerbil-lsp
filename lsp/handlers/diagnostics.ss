@@ -13,11 +13,14 @@
         ../analysis/document
         ../analysis/parser
         ../analysis/symbols
-        ../analysis/module)
+        ../analysis/module
+        ../analysis/cache
+        ../analysis/project-config)
 (export #t)
 
 ;;; Publish diagnostics for a document (full: parse + compile)
 ;;; Called on save — spawns a background thread for gxc
+;;; Also triggers re-diagnosis of dependent files
 (def (publish-diagnostics-for uri)
   (let ((doc (get-document uri)))
     (when doc
@@ -31,7 +34,35 @@
                   ("diagnostics"
                    (list->vector (append parse-diags cached-gxc))))))
         ;; Spawn background thread for gxc diagnostics
-        (spawn-gxc-diagnostics-thread! uri file-path text parse-diags)))))
+        (spawn-gxc-diagnostics-thread! uri file-path text parse-diags)
+        ;; Schedule diagnostics for dependent files
+        (schedule-dependent-diagnostics! uri)))))
+
+;;; Schedule diagnostics for files that depend on the changed file
+(def (schedule-dependent-diagnostics! uri)
+  (let ((dependents (get-dependents uri)))
+    (when (pair? dependents)
+      (lsp-debug "scheduling diagnostics for ~a dependents" (length dependents))
+      (spawn
+        (lambda ()
+          ;; Small delay to let the main file's diagnostics complete first
+          (thread-sleep! 0.5)
+          (for-each
+            (lambda (dep-uri)
+              (let ((dep-doc (get-document dep-uri)))
+                (when dep-doc
+                  (let* ((dep-path (uri->file-path dep-uri))
+                         (dep-text (document-text dep-doc)))
+                    (when (and dep-path (file-exists? dep-path))
+                      (with-catch
+                        (lambda (e) (lsp-debug "dependent diagnostics failed: ~a" e))
+                        (lambda ()
+                          (let ((gxc-diags (compile-diagnostics dep-path dep-text)))
+                            (set-gxc-diagnostics! dep-uri gxc-diags)
+                            (send-notification! "textDocument/publishDiagnostics"
+                              (hash ("uri" dep-uri)
+                                    ("diagnostics" (list->vector gxc-diags))))))))))))
+            dependents))))))
 
 ;;; Spawn a background thread to run gxc diagnostics
 (def (spawn-gxc-diagnostics-thread! uri file-path text parse-diags)
@@ -140,28 +171,72 @@
         (values #f #f)))))
 
 ;;; Compile diagnostics — run gxc on the file
+;;; For unsaved files, writes to a temp file first
 (def (compile-diagnostics file-path text)
-  ;; Only run on actual files (not untitled)
-  (if (and (string? file-path) (file-exists? file-path))
-    (run-gxc-diagnostics file-path)
-    '()))
+  (cond
+    ;; For actual files that exist, run gxc on them directly
+    ((and (string? file-path) (file-exists? file-path))
+     (run-gxc-diagnostics file-path))
+    ;; For unsaved content with a known path, write to temp and compile
+    ((and (string? file-path) (string? text) (> (string-length text) 0))
+     (run-gxc-on-temp-file file-path text))
+    (else '())))
+
+;;; Run gxc on buffer content via a temporary file
+;;; Preserves the original filename for proper module resolution
+(def (run-gxc-on-temp-file original-path text)
+  (with-catch
+    (lambda (e)
+      (lsp-debug "temp file diagnostics failed: ~a" e)
+      '())
+    (lambda ()
+      (let* ((dir (path-directory original-path))
+             (filename (path-strip-directory original-path))
+             (temp-dir (path-expand ".gerbil-lsp-temp" dir))
+             (temp-path (path-expand filename temp-dir)))
+        ;; Ensure temp directory exists
+        (unless (file-exists? temp-dir)
+          (create-directory* temp-dir))
+        ;; Write buffer content to temp file
+        (call-with-output-file temp-path
+          (lambda (port) (display text port)))
+        ;; Run gxc on temp file
+        (let ((diags (run-gxc-diagnostics temp-path)))
+          ;; Clean up temp file
+          (with-catch (lambda (e) (void))
+            (lambda () (delete-file temp-path)))
+          diags)))))
 
 ;;; Run gxc -S on a file and parse the error output.
 ;;; Uses open-process because run-process throws on non-zero exit,
 ;;; but gxc exits non-zero when there are compilation errors —
 ;;; exactly when we need to read its output.
+;;; Uses project-specific gxc path, flags, and loadpath if configured.
 (def (run-gxc-diagnostics file-path)
   (with-catch
     (lambda (e)
       (lsp-debug "gxc diagnostics failed: ~a" e)
       '())
     (lambda ()
-      (let* ((gxc-path (or (get-config "gxc-path") "gxc"))
+      (let* ((root (workspace-root))
+             (gxc-path (if root
+                         (project-gxc-path root)
+                         (or (get-config "gxc-path") "gxc")))
+             (extra-flags (if root (project-gxc-flags root) '()))
+             (loadpath (if root (project-loadpath root) '()))
+             ;; Build arguments: -S file-path plus extra flags
+             (args (append (list "-S") extra-flags (list file-path)))
+             ;; Build environment with GERBIL_LOADPATH if needed
+             (env (if (pair? loadpath)
+                    (list (string-append "GERBIL_LOADPATH="
+                            (string-join loadpath ":")))
+                    #f))
              (proc (open-process
-                      (list path: gxc-path
-                            arguments: (list "-S" file-path)
-                            stderr-redirection: #t
-                            stdout-redirection: #t)))
+                     (list path: gxc-path
+                           arguments: args
+                           environment: env
+                           stderr-redirection: #t
+                           stdout-redirection: #t)))
              (output (read-all-as-string proc))
              (status (process-status proc)))
         ;; process-status returns raw waitpid status;
