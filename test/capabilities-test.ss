@@ -53,6 +53,15 @@
 
     (test-case "server-capabilities: has documentLinkProvider"
       (check (hash-key? (server-capabilities) "documentLinkProvider") => #t))
+
+    (test-case "server-capabilities: has executeCommandProvider"
+      (let ((caps (server-capabilities)))
+        (check (hash-key? caps "executeCommandProvider") => #t)
+        (let* ((ecp (hash-ref caps "executeCommandProvider"))
+               (cmds (hash-ref ecp "commands")))
+          ;; Should have our two commands
+          (check (list? cmds) => #t)
+          (check (>= (length cmds) 2) => #t))))
   ))
 
 (def main

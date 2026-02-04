@@ -126,10 +126,28 @@
 (def (set-diagnostics-thread! t) (set! *diagnostics-thread* t))
 (def (diagnostics-mutex) *diagnostics-mutex*)
 
+;;; --- Debounce thread state ---
+;;; Used for debounced diagnostics on didChange
+(def *debounce-thread* #f)
+(def *debounce-mutex* (make-mutex 'debounce))
+
+(def (debounce-thread) *debounce-thread*)
+(def (set-debounce-thread! t) (set! *debounce-thread* t))
+(def (debounce-mutex) *debounce-mutex*)
+
+;;; --- Last completion URI ---
+;;; completionItem/resolve doesn't receive the document URI,
+;;; so we cache it from the last textDocument/completion request.
+(def *last-completion-uri* #f)
+
+(def (last-completion-uri) *last-completion-uri*)
+(def (set-last-completion-uri! uri) (set! *last-completion-uri* uri))
+
 ;;; --- Configuration ---
 (def *server-config*
   (hash ("gxc-path" "gxc")
         ("diagnostics-on-save" #t)
+        ("diagnostics-delay" 1500)
         ("log-level" "info")
         ("format-line-width" 80)))
 

@@ -56,6 +56,11 @@
 
 ;;; Resolve a standard library or package module
 ;;; Returns the source path if available, #f otherwise
+;;; Search order:
+;;;   1. $GERBIL_HOME/src/
+;;;   2. ~/.gerbil/pkg/
+;;;   3. $WORKSPACE/.gerbil/lib/ (project-local)
+;;;   4. $GERBIL_LOADPATH directories
 (def (resolve-std-module module-str)
   (let* ((clean (if (string-prefix? ":" module-str)
                   (substring module-str 1 (string-length module-str))
@@ -68,7 +73,46 @@
       ;; Try user's .gerbil/pkg
       (let ((pkg-path (string-append (getenv "HOME" "") "/.gerbil/pkg/"
                                       clean ".ss")))
-        (if (file-exists? pkg-path) pkg-path #f)))))
+        (if (file-exists? pkg-path)
+          pkg-path
+          ;; Try workspace-local .gerbil/lib
+          (or (resolve-in-workspace-lib clean)
+              (resolve-in-loadpath clean)))))))
+
+;;; Try to resolve a module in the workspace-local .gerbil/lib directory
+(def (resolve-in-workspace-lib clean)
+  (let ((ws (workspace-root)))
+    (and ws
+         (let ((ws-path (string-append ws "/.gerbil/lib/" clean ".ss")))
+           (and (file-exists? ws-path) ws-path)))))
+
+;;; Try to resolve a module in GERBIL_LOADPATH directories
+(def (resolve-in-loadpath clean)
+  (let ((loadpath (getenv "GERBIL_LOADPATH" "")))
+    (and (> (string-length loadpath) 0)
+         (let loop ((dirs (split-loadpath loadpath)))
+           (if (null? dirs) #f
+             (let ((candidate (string-append (car dirs) "/" clean ".ss")))
+               (if (file-exists? candidate)
+                 candidate
+                 (loop (cdr dirs)))))))))
+
+;;; Split a colon-separated GERBIL_LOADPATH string into a list of directories
+(def (split-loadpath str)
+  (let loop ((i 0) (start 0) (result '()))
+    (cond
+      ((>= i (string-length str))
+       (let ((last (substring str start i)))
+         (reverse (if (> (string-length last) 0)
+                    (cons last result)
+                    result))))
+      ((char=? (string-ref str i) #\:)
+       (let ((part (substring str start i)))
+         (loop (+ i 1) (+ i 1)
+               (if (> (string-length part) 0)
+                 (cons part result)
+                 result))))
+      (else (loop (+ i 1) start result)))))
 
 ;;; Get exports for a module, using cache with mtime invalidation
 (def (get-or-resolve-module-exports module-spec current-file)

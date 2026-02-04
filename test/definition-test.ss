@@ -7,6 +7,7 @@
         :lsp/lsp/analysis/document
         :lsp/lsp/analysis/parser
         :lsp/lsp/analysis/symbols
+        :lsp/lsp/analysis/completion-data
         :lsp/lsp/handlers/definition)
 
 (export definition-test-suite)
@@ -60,6 +61,21 @@
         ;; Cleanup
         (remove-document! uri)
         (remove-file-symbols! uri)))
+
+    ;; --- find-stdlib-module-for ---
+    (test-case "find-stdlib-module-for: known symbol"
+      (check-equal? (find-stdlib-module-for "read-json") ":std/text/json"))
+
+    (test-case "find-stdlib-module-for: unknown symbol"
+      (check (find-stdlib-module-for "nonexistent-xyz") => #f))
+
+    (test-case "find-stdlib-module-for: sugar symbol"
+      (check-equal? (find-stdlib-module-for "if-let") ":std/sugar"))
+
+    ;; --- find-definition-in-stdlib ---
+    (test-case "find-definition-in-stdlib: unknown returns void"
+      (let ((result (find-definition-in-stdlib "totally-unknown-symbol-xyz")))
+        (check (void? result) => #t)))
   ))
 
 (def main

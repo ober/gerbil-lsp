@@ -16,7 +16,9 @@
   (set! *initialized* #f)
   (set! *shutdown-requested* #f)
   (set! *workspace-root* #f)
-  (set! *client-capabilities* #f))
+  (set! *client-capabilities* #f)
+  (set! *last-completion-uri* #f)
+  (set! *debounce-thread* #f))
 
 (def state-test-suite
   (test-suite "lsp/state"
@@ -112,6 +114,27 @@
       (check-equal? (get-file-text "uri") "source code")
       (remove-file-text! "uri")
       (check (get-file-text "uri") => #f))
+
+    ;; --- Last completion URI ---
+    (test-case "last-completion-uri: get/set"
+      (reset-state!)
+      (check (last-completion-uri) => #f)
+      (set-last-completion-uri! "file:///test.ss")
+      (check-equal? (last-completion-uri) "file:///test.ss")
+      (set-last-completion-uri! #f))
+
+    ;; --- Debounce thread ---
+    (test-case "debounce-thread: get/set"
+      (reset-state!)
+      (check (debounce-thread) => #f)
+      (set-debounce-thread! 'dummy-thread)
+      (check-equal? (debounce-thread) 'dummy-thread)
+      (set-debounce-thread! #f))
+
+    ;; --- Configuration defaults ---
+    (test-case "config: diagnostics-delay default"
+      (check (number? (get-config "diagnostics-delay")) => #t)
+      (check (= (get-config "diagnostics-delay") 1500) => #t))
   ))
 
 (def main

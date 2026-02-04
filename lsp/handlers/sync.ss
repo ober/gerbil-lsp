@@ -50,7 +50,9 @@
           ;; Re-analyze symbols
           (analyze-document! uri updated)
           ;; Publish parse-level diagnostics (fast, no gxc)
-          (publish-parse-diagnostics uri (document-text updated)))))))
+          (publish-parse-diagnostics uri (document-text updated))
+          ;; Schedule debounced gxc diagnostics after quiet period
+          (schedule-debounced-diagnostics! uri))))))
 
 ;;; Handle textDocument/didClose
 (def (handle-did-close params)
@@ -77,6 +79,8 @@
                              (document-version doc))))
               (set-document! uri updated)
               (analyze-document! uri updated))))))
+    ;; Cancel any pending debounced diagnostics
+    (cancel-debounce-thread!)
     ;; Invalidate module cache for this file
     (invalidate-module-cache-for-uri! uri)
     ;; Run diagnostics on save

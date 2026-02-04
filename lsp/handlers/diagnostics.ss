@@ -312,6 +312,39 @@
                     #t
                     (loop (cdr syms))))))))))))
 
+;;; Schedule debounced gxc diagnostics for a URI
+;;; Cancels any previous debounce timer and starts a new one.
+;;; After the delay (ms), runs full diagnostics.
+(def (schedule-debounced-diagnostics! uri)
+  (mutex-lock! (debounce-mutex))
+  ;; Cancel previous debounce thread
+  (let ((prev (debounce-thread)))
+    (when prev
+      (with-catch (lambda (e) (void))
+        (lambda () (thread-terminate! prev)))))
+  (let* ((delay-ms (or (get-config "diagnostics-delay") 1500))
+         (delay-secs (/ delay-ms 1000.0))
+         (t (spawn
+              (lambda ()
+                (with-catch
+                  (lambda (e)
+                    (lsp-debug "debounced diagnostics cancelled: ~a" e))
+                  (lambda ()
+                    (thread-sleep! delay-secs)
+                    (publish-diagnostics-for uri)))))))
+    (set-debounce-thread! t))
+  (mutex-unlock! (debounce-mutex)))
+
+;;; Cancel the debounce thread if running
+(def (cancel-debounce-thread!)
+  (mutex-lock! (debounce-mutex))
+  (let ((prev (debounce-thread)))
+    (when prev
+      (with-catch (lambda (e) (void))
+        (lambda () (thread-terminate! prev)))
+      (set-debounce-thread! #f)))
+  (mutex-unlock! (debounce-mutex)))
+
 ;;; Find the line number where a given import spec appears
 (def (find-import-line-for-spec spec text)
   (let ((spec-str (format "~a" spec))

@@ -9,7 +9,8 @@
         ../analysis/parser
         ../analysis/symbols
         ../analysis/module
-        ../analysis/index)
+        ../analysis/index
+        ../analysis/completion-data)
 (export #t)
 
 ;;; Handle textDocument/definition
@@ -49,7 +50,45 @@
                                 (sym-info-end-line info)
                                 (sym-info-end-col info))))
             ;; Try resolving through imports
-            (find-definition-in-imports name uri text)))))))
+            (let ((import-result (find-definition-in-imports name uri text)))
+              (if (not (void? import-result))
+                import-result
+                ;; Fallback: try stdlib symbols
+                (find-definition-in-stdlib name)))))))))
+
+;;; Find a symbol definition in the standard library
+;;; Uses *stdlib-symbols* to find the module, then resolves to source
+(def (find-definition-in-stdlib name)
+  (with-catch
+    (lambda (e)
+      (lsp-debug "stdlib definition lookup failed: ~a" e)
+      (void))
+    (lambda ()
+      (let ((module (find-stdlib-module-for name)))
+        (if module
+          (let ((path (resolve-std-module module)))
+            (if path
+              ;; Try to find exact position via exports analysis
+              (let ((exports (analyze-file-exports path)))
+                (let ((found (find-sym-by-name name exports)))
+                  (if found
+                    (make-lsp-location (path->uri path)
+                      (make-lsp-range (sym-info-line found) (sym-info-col found)
+                                      (sym-info-end-line found) (sym-info-end-col found)))
+                    ;; Fall back to beginning of file
+                    (make-lsp-location (path->uri path)
+                      (make-lsp-range 0 0 0 0)))))
+              (void)))
+          (void))))))
+
+;;; Look up which stdlib module exports a given symbol name
+(def (find-stdlib-module-for name)
+  (let loop ((entries *stdlib-symbols*))
+    (if (null? entries) #f
+      (let ((entry (car entries)))
+        (if (string=? name (car entry))
+          (cadr entry)
+          (loop (cdr entries)))))))
 
 ;;; Try to find a symbol definition by resolving the file's imports
 (def (find-definition-in-imports name uri text)

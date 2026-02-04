@@ -3,6 +3,7 @@
 (import :std/test
         :lsp/lsp/types
         :lsp/lsp/util/position
+        :lsp/lsp/util/string
         :lsp/lsp/handlers/rename)
 
 (export rename-test-suite)
@@ -12,31 +13,41 @@
 
     ;; --- find-edits-in-line ---
     (test-case "find-edits-in-line: single occurrence"
-      (let ((edits (find-edits-in-line "(def foo 1)" 0 11 0
-                                        "foo" 3 "bar")))
+      (let* ((text "(def foo 1)")
+             (regions (classify-text-regions text))
+             (edits (find-edits-in-line text 0 11 0
+                                        "foo" 3 "bar" regions)))
         (check (length edits) => 1)
         (let ((edit (car edits)))
           (check-equal? (hash-ref edit "newText") "bar"))))
 
     (test-case "find-edits-in-line: multiple occurrences"
-      (let ((edits (find-edits-in-line "(+ x x)" 0 7 0
-                                        "x" 1 "y")))
+      (let* ((text "(+ x x)")
+             (regions (classify-text-regions text))
+             (edits (find-edits-in-line text 0 7 0
+                                        "x" 1 "y" regions)))
         (check (length edits) => 2)))
 
     (test-case "find-edits-in-line: no match"
-      (let ((edits (find-edits-in-line "(def foo 1)" 0 11 0
-                                        "bar" 3 "baz")))
+      (let* ((text "(def foo 1)")
+             (regions (classify-text-regions text))
+             (edits (find-edits-in-line text 0 11 0
+                                        "bar" 3 "baz" regions)))
         (check (length edits) => 0)))
 
     (test-case "find-edits-in-line: respects word boundaries"
-      (let ((edits (find-edits-in-line "foobar foo" 0 10 0
-                                        "foo" 3 "baz")))
+      (let* ((text "foobar foo")
+             (regions (classify-text-regions text))
+             (edits (find-edits-in-line text 0 10 0
+                                        "foo" 3 "baz" regions)))
         ;; Only standalone "foo" should match
         (check (length edits) => 1)))
 
     (test-case "find-edits-in-line: empty line"
-      (let ((edits (find-edits-in-line "" 0 0 0
-                                        "foo" 3 "bar")))
+      (let* ((text "")
+             (regions (classify-text-regions text))
+             (edits (find-edits-in-line text 0 0 0
+                                        "foo" 3 "bar" regions)))
         (check (length edits) => 0)))
 
     ;; --- find-rename-edits-in-text ---
@@ -63,6 +74,21 @@
                      "x" "y")))
         ;; "x" appears twice
         (check (length edits) => 2)))
+
+    ;; --- string/comment filtering ---
+    (test-case "find-rename-edits-in-text: skips matches in strings"
+      (let ((edits (find-rename-edits-in-text
+                     "(def x 1)\n(displayln \"x is great\")"
+                     "x" "y")))
+        ;; Only the code "x", not the "x" inside the string
+        (check (length edits) => 1)))
+
+    (test-case "find-rename-edits-in-text: skips matches in comments"
+      (let ((edits (find-rename-edits-in-text
+                     "(def x 1) ; x is a var"
+                     "x" "y")))
+        ;; Only the code "x", not the one in comment
+        (check (length edits) => 1)))
   ))
 
 (def main

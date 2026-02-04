@@ -79,6 +79,9 @@
     ("diagnosticProvider"
      (hash ("interFileDependencies" #f)
            ("workspaceDiagnostics" #f)))
+    ;; Execute command
+    ("executeCommandProvider"
+     (hash ("commands" ["gerbil-lsp.runTest" "gerbil-lsp.showReferences"])))
     ;; Workspace capabilities
     ("workspace"
      (hash ("workDoneProgress" #t)))))

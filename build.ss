@@ -42,5 +42,6 @@
     "lsp/handlers/code-lens"
     "lsp/handlers/on-type-formatting"
     "lsp/handlers/pull-diagnostics"
+    "lsp/handlers/execute-command"
     "lsp/server"
     (exe: "lsp/main" bin: "gerbil-lsp")))

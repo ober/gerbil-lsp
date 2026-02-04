@@ -6,16 +6,24 @@ A Language Server Protocol (LSP) implementation for [Gerbil Scheme](https://cons
 
 | Feature | LSP Method | Description |
 |---------|------------|-------------|
-| Diagnostics | `textDocument/publishDiagnostics` | Compilation errors via `gxc` and parse error detection |
-| Completion | `textDocument/completion` | Symbols from current file, workspace, and Gerbil keywords |
+| Diagnostics | `textDocument/publishDiagnostics` | Compilation errors via `gxc` and parse error detection, debounced on change |
+| Completion | `textDocument/completion` | Symbols from current file, workspace, and Gerbil keywords with auto-import |
 | Hover | `textDocument/hover` | Symbol info with kind, signature, and source location |
-| Go to Definition | `textDocument/definition` | Jump to symbol definition across workspace |
+| Go to Definition | `textDocument/definition` | Jump to symbol definition across workspace and stdlib |
 | Find References | `textDocument/references` | Locate all occurrences of a symbol |
 | Document Symbols | `textDocument/documentSymbol` | Outline view of definitions in current file |
 | Workspace Symbols | `workspace/symbol` | Search definitions across all indexed files |
-| Rename | `textDocument/rename` | Rename a symbol across all open documents |
+| Rename | `textDocument/rename` | Scope-aware rename, skips strings and comments |
 | Formatting | `textDocument/formatting` | Format via Gambit's `pretty-print` |
 | Signature Help | `textDocument/signatureHelp` | Function signatures while typing arguments |
+| Code Action | `textDocument/codeAction` | Quick fixes and refactoring actions |
+| Code Lens | `textDocument/codeLens` | Inline actions (run test, show references) |
+| Execute Command | `workspace/executeCommand` | Run test files, show reference counts |
+| Document Highlight | `textDocument/documentHighlight` | Highlight occurrences of symbol under cursor |
+| Folding Range | `textDocument/foldingRange` | Code folding for top-level forms |
+| Selection Range | `textDocument/selectionRange` | Expand/shrink selection by syntax |
+| Document Link | `textDocument/documentLink` | Clickable module import paths |
+| Inlay Hints | `textDocument/inlayHint` | Inline type/parameter hints |
 
 ### Symbol Recognition
 
@@ -38,6 +46,8 @@ Import resolution supports:
 - Relative imports: `./foo`, `../bar`
 - Package modules: `:mypackage/module`
 - Complex import forms: `only-in`, `except-in`, `rename-in`, `prefix-in`
+- Workspace-local packages: `.gerbil/lib/` in workspace root
+- `GERBIL_LOADPATH` directories
 
 ## Requirements
 
@@ -143,7 +153,8 @@ lsp/
 │
 ├── util/
 │   ├── log.ss              Logging to stderr
-│   └── position.ss         Line/column and range utilities
+│   ├── position.ss         Line/column and range utilities
+│   └── string.ss           String utilities and text region classification
 │
 ├── analysis/
 │   ├── document.ss         Document text buffer tracking
@@ -156,15 +167,24 @@ lsp/
 └── handlers/
     ├── lifecycle.ss        initialize, shutdown, exit
     ├── sync.ss             didOpen, didChange, didClose, didSave
-    ├── diagnostics.ss      Compile errors via gxc
-    ├── completion.ss       textDocument/completion
+    ├── diagnostics.ss      Compile errors via gxc + debounced on-change
+    ├── completion.ss       textDocument/completion with auto-import
     ├── hover.ss            textDocument/hover
-    ├── definition.ss       textDocument/definition
+    ├── definition.ss       textDocument/definition (local + stdlib)
     ├── references.ss       textDocument/references
     ├── symbols.ss          documentSymbol + workspace/symbol
-    ├── rename.ss           textDocument/rename
+    ├── rename.ss           Scope-aware rename (skips strings/comments)
     ├── formatting.ss       textDocument/formatting
-    └── signature.ss        textDocument/signatureHelp
+    ├── signature.ss        textDocument/signatureHelp
+    ├── execute-command.ss  workspace/executeCommand (run test, show refs)
+    ├── code-action.ss      textDocument/codeAction
+    ├── code-lens.ss        textDocument/codeLens
+    ├── document-highlight.ss  textDocument/documentHighlight
+    ├── document-link.ss    textDocument/documentLink
+    ├── folding-range.ss    textDocument/foldingRange
+    ├── selection-range.ss  textDocument/selectionRange
+    ├── inlay-hints.ss      textDocument/inlayHint
+    └── pull-diagnostics.ss textDocument/diagnostic (pull model)
 ```
 
 ### Data Flow
@@ -185,6 +205,10 @@ The server maintains global state in `lsp/state.ss`:
 | `*symbol-index*` | `uri -> sym-info list` | Extracted symbols per file |
 | `*module-cache*` | `module-path -> exports` | Cached module export lists |
 | `*workspace-root*` | `string` | Workspace root directory |
+| `*last-completion-uri*` | `string` | URI of last completion request (for resolve) |
+| `*debounce-thread*` | `thread` | Active debounced diagnostics thread |
+| `*file-text-cache*` | `uri -> string` | Cached file contents for analysis |
+| `*gxc-diagnostics-cache*` | `uri -> diagnostics` | Cached gxc compilation results |
 
 Documents are re-analyzed on every change (full text sync). The symbol index is updated incrementally as files are opened and modified.
 
@@ -214,6 +238,8 @@ On file open and save, the server runs two levels of checking:
 1. **Parse-level**: Attempts to read the file as S-expressions using Gambit's `read`. Reports syntax errors with position info.
 2. **Compile-level**: Runs `gxc -S` on the file and parses its error output into structured diagnostics with file, line, column, and message.
 
+Compile-level diagnostics are also triggered on text changes with a configurable debounce delay (default: 1500ms). After the user stops typing, the server waits for the delay period before running `gxc`, avoiding redundant compilations during active editing.
+
 ### Completion
 
 Completion candidates come from three sources, filtered by the prefix at the cursor:
@@ -224,6 +250,8 @@ Completion candidates come from three sources, filtered by the prefix at the cur
 
 Trigger characters: `(`, `:`, `/`, `.`
 
+**Auto-import**: When a completion item comes from a known stdlib module (e.g., `read-json` from `:std/text/json`), accepting the completion via `completionItem/resolve` automatically inserts the corresponding `(import ...)` statement if not already present.
+
 ### Hover
 
 When hovering over a symbol, the server:
@@ -231,6 +259,14 @@ When hovering over a symbol, the server:
 1. Identifies the symbol at the cursor position using word-boundary detection
 2. Searches local file symbols, then workspace-wide definitions
 3. Returns a markdown code block showing the signature and kind
+
+### Rename
+
+Rename is scope-aware:
+
+- **Local variables** (parameters, `let` bindings): renames are restricted to the enclosing form, preventing unintended changes to same-named symbols elsewhere
+- **Global symbols**: renames apply across all open documents
+- **String and comment filtering**: occurrences inside string literals and comments are never renamed
 
 ### Formatting
 
@@ -302,9 +338,9 @@ gerbil-lsp/
 ├── gerbil.pkg          Package definition (package: lsp)
 ├── build.ss            Build script listing all modules
 ├── Makefile            Build/clean/install targets
-├── lsp/                All source code (23 modules)
+├── lsp/                All source code (30+ modules)
 ├── emacs/              Emacs integration
-└── test/               Test files (placeholder)
+└── test/               Test suites
 ```
 
 ## Known Limitations
@@ -312,7 +348,7 @@ gerbil-lsp/
 - **Full document sync only** -- the entire document text is sent on each change (no incremental sync yet)
 - **Formatting strips comments** -- `pretty-print` operates on S-expressions after `read`, which discards comments
 - **No incremental indexing** -- workspace symbols are only indexed from open documents, not scanned on startup
-- **Diagnostics require saved files** -- `gxc` compilation runs on the filesystem copy, not the editor buffer
+- **Compile diagnostics use saved files** -- `gxc` runs on the filesystem copy; debounced on-change diagnostics will use stale data until the file is saved
 - **Rename is limited to open documents** -- closed files in the workspace are not updated
 
 ## License

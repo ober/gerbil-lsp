@@ -2,6 +2,7 @@
 ;;; Tests for lsp/handlers/completion and completion-data
 (import :std/test
         :lsp/lsp/types
+        :lsp/lsp/util/position
         :lsp/lsp/state
         :lsp/lsp/analysis/document
         :lsp/lsp/analysis/parser
@@ -96,6 +97,44 @@
              (result (handle-completion params)))
         (check (hash-table? result) => #t)
         (check (vector-length (hash-ref result "items" [])) => 0)))
+
+    ;; --- auto-import helpers ---
+    (test-case "module-already-imported?: found"
+      (check (module-already-imported?
+               "(import :std/text/json)" ":std/text/json") => #t))
+
+    (test-case "module-already-imported?: not found"
+      (check (module-already-imported?
+               "(import :std/sugar)" ":std/text/json") => #f))
+
+    (test-case "compute-import-text: formats correctly"
+      (check-equal? (compute-import-text ":std/text/json")
+                    "(import :std/text/json)\n"))
+
+    (test-case "find-auto-import-position: after imports"
+      (let ((pos (find-auto-import-position
+                   "(import :std/sugar)\n(def x 1)\n")))
+        ;; Should be line 1 (after the import on line 0)
+        (check (= pos 1) => #t)))
+
+    (test-case "find-auto-import-position: no imports"
+      (let ((pos (find-auto-import-position "(def x 1)\n")))
+        ;; Should be 0 when no imports exist
+        (check (= pos 0) => #t)))
+
+    (test-case "handle-completion: caches URI for resolve"
+      (let* ((uri "file:///test-cache-uri.ss")
+             (text "(def x 1)")
+             (doc (make-document uri 1 text "gerbil")))
+        (set-document! uri doc)
+        (set-file-symbols! uri '())
+        (handle-completion
+          (hash ("textDocument" (hash ("uri" uri)))
+                ("position" (hash ("line" 0) ("character" 1)))))
+        (check-equal? (last-completion-uri) uri)
+        ;; Cleanup
+        (remove-document! uri)
+        (remove-file-symbols! uri)))
   ))
 
 (def main

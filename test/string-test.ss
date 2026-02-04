@@ -113,6 +113,66 @@
 
     (test-case "take-at-most: negative n"
       (check-equal? (take-at-most '(1 2 3) -1) '()))
+
+    ;; --- classify-text-regions ---
+    (test-case "classify-text-regions: pure code"
+      (let ((r (classify-text-regions "(def x 1)")))
+        (check (u8vector-ref r 0) => 0)  ;; ( is code
+        (check (u8vector-ref r 4) => 0)  ;; x is code
+        (check (u8vector-length r) => 9)))
+
+    (test-case "classify-text-regions: string literal"
+      (let ((r (classify-text-regions "(def x \"hello\")")))
+        ;; The 'h' inside the string should be 1
+        (check (u8vector-ref r 7) => 1)   ;; " opening
+        (check (u8vector-ref r 8) => 1)   ;; h
+        (check (u8vector-ref r 13) => 1)  ;; " closing
+        ;; The ( should be code
+        (check (u8vector-ref r 0) => 0)))
+
+    (test-case "classify-text-regions: line comment"
+      (let ((r (classify-text-regions "x ; comment")))
+        (check (u8vector-ref r 0) => 0)   ;; x is code
+        (check (u8vector-ref r 2) => 2)   ;; ; is comment
+        (check (u8vector-ref r 4) => 2)   ;; c is comment
+        (check (u8vector-ref r 10) => 2))) ;; t is comment
+
+    (test-case "classify-text-regions: block comment"
+      (let ((r (classify-text-regions "a #| block |# b")))
+        (check (u8vector-ref r 0) => 0)    ;; a is code
+        (check (u8vector-ref r 2) => 2)    ;; # is comment
+        (check (u8vector-ref r 5) => 2)    ;; b inside comment
+        (check (u8vector-ref r 12) => 2)   ;; # closing
+        (check (u8vector-ref r 14) => 0))) ;; b after is code
+
+    (test-case "classify-text-regions: escape in string"
+      (let ((r (classify-text-regions "\"a\\\"b\"")))
+        ;; The entire "a\"b" should be string (1)
+        (check (u8vector-ref r 0) => 1)   ;; opening "
+        (check (u8vector-ref r 2) => 1)   ;; backslash
+        (check (u8vector-ref r 3) => 1)   ;; escaped "
+        (check (u8vector-ref r 5) => 1))) ;; closing "
+
+    (test-case "classify-text-regions: empty string"
+      (let ((r (classify-text-regions "")))
+        (check (u8vector-length r) => 0)))
+
+    ;; --- in-string-or-comment? ---
+    (test-case "in-string-or-comment?: code position"
+      (let ((r (classify-text-regions "(def x 1)")))
+        (check (in-string-or-comment? r 0) => #f)))
+
+    (test-case "in-string-or-comment?: string position"
+      (let ((r (classify-text-regions "(def x \"hi\")")))
+        (check (in-string-or-comment? r 8) => #t)))
+
+    (test-case "in-string-or-comment?: comment position"
+      (let ((r (classify-text-regions "x ; y")))
+        (check (in-string-or-comment? r 3) => #t)))
+
+    (test-case "in-string-or-comment?: out of bounds"
+      (let ((r (classify-text-regions "x")))
+        (check (in-string-or-comment? r 100) => #f)))
   ))
 
 (def main

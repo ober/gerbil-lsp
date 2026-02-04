@@ -28,7 +28,8 @@
         ./handlers/type-hierarchy
         ./handlers/code-lens
         ./handlers/on-type-formatting
-        ./handlers/pull-diagnostics)
+        ./handlers/pull-diagnostics
+        ./handlers/execute-command)
 (export main)
 
 (def (main . args)
@@ -116,4 +117,6 @@
   (register-request-handler! "textDocument/onTypeFormatting" handle-on-type-formatting)
   ;; Pull diagnostics
   (register-request-handler! "textDocument/diagnostic" handle-document-diagnostic)
+  ;; Execute command
+  (register-request-handler! "workspace/executeCommand" handle-execute-command)
   (lsp-info "all handlers registered"))

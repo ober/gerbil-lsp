@@ -58,3 +58,82 @@
   (if (or (null? lst) (<= n 0))
     '()
     (cons (car lst) (take-at-most (cdr lst) (- n 1)))))
+
+;;; Classify each character position in text as:
+;;;   0 = code, 1 = string, 2 = comment
+;;; Handles: "...", ; line comments, #| block comments |#,
+;;;          escape sequences in strings, #\ character literals
+;;; Returns a u8vector of same length as text.
+(def (classify-text-regions text)
+  (let* ((len (string-length text))
+         (regions (make-u8vector len 0)))
+    (let loop ((i 0))
+      (when (< i len)
+        (let ((c (string-ref text i)))
+          (cond
+            ;; String literal
+            ((char=? c #\")
+             (u8vector-set! regions i 1)
+             (let str-loop ((j (+ i 1)))
+               (if (>= j len)
+                 (loop j)  ;; unterminated string
+                 (let ((sc (string-ref text j)))
+                   (u8vector-set! regions j 1)
+                   (cond
+                     ((char=? sc #\\)
+                      ;; Skip escaped character
+                      (when (< (+ j 1) len)
+                        (u8vector-set! regions (+ j 1) 1))
+                      (str-loop (+ j 2)))
+                     ((char=? sc #\")
+                      (loop (+ j 1)))
+                     (else (str-loop (+ j 1))))))))
+            ;; Line comment
+            ((char=? c #\;)
+             (let cmt-loop ((j i))
+               (if (or (>= j len) (char=? (string-ref text j) #\newline))
+                 (loop j)
+                 (begin
+                   (u8vector-set! regions j 2)
+                   (cmt-loop (+ j 1))))))
+            ;; Block comment #| ... |#
+            ((and (char=? c #\#)
+                  (< (+ i 1) len)
+                  (char=? (string-ref text (+ i 1)) #\|))
+             (u8vector-set! regions i 2)
+             (u8vector-set! regions (+ i 1) 2)
+             (let blk-loop ((j (+ i 2)) (depth 1))
+               (cond
+                 ((>= j len) (loop j))  ;; unterminated
+                 ((and (char=? (string-ref text j) #\|)
+                       (< (+ j 1) len)
+                       (char=? (string-ref text (+ j 1)) #\#))
+                  (u8vector-set! regions j 2)
+                  (u8vector-set! regions (+ j 1) 2)
+                  (if (= depth 1)
+                    (loop (+ j 2))
+                    (blk-loop (+ j 2) (- depth 1))))
+                 ((and (char=? (string-ref text j) #\#)
+                       (< (+ j 1) len)
+                       (char=? (string-ref text (+ j 1)) #\|))
+                  (u8vector-set! regions j 2)
+                  (u8vector-set! regions (+ j 1) 2)
+                  (blk-loop (+ j 2) (+ depth 1)))
+                 (else
+                  (u8vector-set! regions j 2)
+                  (blk-loop (+ j 1) depth)))))
+            ;; Character literal #\x — skip the char after #\
+            ((and (char=? c #\#)
+                  (< (+ i 1) len)
+                  (char=? (string-ref text (+ i 1)) #\\))
+             (if (< (+ i 2) len)
+               (loop (+ i 3))  ;; skip #\x
+               (loop (+ i 2))))
+            ;; Normal code character
+            (else (loop (+ i 1)))))))
+    regions))
+
+;;; Check if an offset falls in a string or comment region
+(def (in-string-or-comment? regions offset)
+  (and (< offset (u8vector-length regions))
+       (> (u8vector-ref regions offset) 0)))
