@@ -24,12 +24,14 @@
         ./handlers/semantic-tokens
         ./handlers/inlay-hints
         ./handlers/call-hierarchy
+        ./handlers/type-definition
         ./handlers/implementation
         ./handlers/type-hierarchy
         ./handlers/code-lens
         ./handlers/on-type-formatting
         ./handlers/pull-diagnostics
-        ./handlers/execute-command)
+        ./handlers/execute-command
+        ./handlers/will-rename)
 (export main)
 
 (def (main . args)
@@ -82,6 +84,7 @@
   (register-request-handler! "completionItem/resolve" handle-completion-resolve)
   (register-request-handler! "textDocument/hover" handle-hover)
   (register-request-handler! "textDocument/definition" handle-definition)
+  (register-request-handler! "textDocument/declaration" handle-definition)
   (register-request-handler! "textDocument/references" handle-references)
   (register-request-handler! "textDocument/documentSymbol" handle-document-symbol)
   (register-request-handler! "workspace/symbol" handle-workspace-symbol)
@@ -90,6 +93,7 @@
   (register-request-handler! "textDocument/formatting" handle-formatting)
   (register-request-handler! "textDocument/signatureHelp" handle-signature-help)
   (register-request-handler! "textDocument/codeAction" handle-code-action)
+  (register-request-handler! "codeAction/resolve" handle-code-action-resolve)
   (register-request-handler! "textDocument/documentHighlight" handle-document-highlight)
   (register-request-handler! "textDocument/foldingRange" handle-folding-range)
   (register-request-handler! "textDocument/selectionRange" handle-selection-range)
@@ -101,11 +105,14 @@
   (register-request-handler! "textDocument/rangeFormatting" handle-range-formatting)
   ;; Inlay hints
   (register-request-handler! "textDocument/inlayHint" handle-inlay-hint)
+  (register-request-handler! "inlayHint/resolve" handle-inlay-hint-resolve)
   ;; Call hierarchy
   (register-request-handler! "textDocument/prepareCallHierarchy"
     handle-prepare-call-hierarchy)
   (register-request-handler! "callHierarchy/incomingCalls" handle-incoming-calls)
   (register-request-handler! "callHierarchy/outgoingCalls" handle-outgoing-calls)
+  ;; Go to type definition
+  (register-request-handler! "textDocument/typeDefinition" handle-type-definition)
   ;; Go to implementation
   (register-request-handler! "textDocument/implementation" handle-implementation)
   ;; Type hierarchy
@@ -121,4 +128,6 @@
   (register-request-handler! "textDocument/diagnostic" handle-document-diagnostic)
   ;; Execute command
   (register-request-handler! "workspace/executeCommand" handle-execute-command)
+  ;; File operations
+  (register-request-handler! "workspace/willRenameFiles" handle-will-rename-files)
   (lsp-info "all handlers registered"))

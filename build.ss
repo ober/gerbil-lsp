@@ -39,11 +39,13 @@
     "lsp/handlers/semantic-tokens"
     "lsp/handlers/inlay-hints"
     "lsp/handlers/call-hierarchy"
+    "lsp/handlers/type-definition"
     "lsp/handlers/implementation"
     "lsp/handlers/type-hierarchy"
     "lsp/handlers/code-lens"
     "lsp/handlers/on-type-formatting"
     "lsp/handlers/pull-diagnostics"
     "lsp/handlers/execute-command"
+    "lsp/handlers/will-rename"
     "lsp/server"
     (exe: "lsp/main" bin: "gerbil-lsp")))

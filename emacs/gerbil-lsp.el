@@ -14,24 +14,26 @@
 ;; Features supported:
 ;;   - Completion with trigger characters ( : / .
 ;;   - Hover documentation
-;;   - Go to definition / implementation
+;;   - Go to definition / declaration / implementation
+;;   - Go to type definition (make-X → X, X? → X, X-field → X)
 ;;   - Find references
 ;;   - Document & workspace symbols
 ;;   - Rename (with prepare support)
 ;;   - Formatting (full, range, on-type)
 ;;   - Signature help
-;;   - Code actions (quickfix, organize imports)
+;;   - Code actions (quickfix, organize imports) with lazy resolution
 ;;   - Document highlight
 ;;   - Folding ranges
 ;;   - Selection ranges
 ;;   - Document links
 ;;   - Semantic tokens (10 token types, 2 modifiers)
-;;   - Inlay hints (parameter names, requires Eglot 1.15+)
+;;   - Inlay hints (parameter names) with lazy resolution
 ;;   - Call hierarchy (incoming/outgoing)
 ;;   - Type hierarchy (supertypes/subtypes)
 ;;   - Code lenses (reference counts, test runners)
 ;;   - Pull diagnostics
 ;;   - Custom commands (run test, show references)
+;;   - File rename import rewriting (workspace/willRenameFiles)
 ;;
 ;; Usage:
 ;;   1. Build gerbil-lsp: cd /path/to/gerbil-lsp && make build
@@ -520,6 +522,8 @@ Uses LSP selectionRange to expand structurally."
     (define-key map (kbd "C-c l n") #'eglot-rename)
     (define-key map (kbd "C-c l f") #'eglot-format-buffer)
     (define-key map (kbd "C-c l d") #'xref-find-definitions)
+    (define-key map (kbd "C-c l D") #'eglot-find-declaration)
+    (define-key map (kbd "C-c l T") #'eglot-find-typeDefinition)
     (define-key map (kbd "C-c l R") #'xref-find-references)
     (define-key map (kbd "C-c l i") #'eglot-find-implementation)
     (define-key map (kbd "C-c l w") #'xref-find-apropos)

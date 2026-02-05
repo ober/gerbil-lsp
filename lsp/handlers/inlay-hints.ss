@@ -176,6 +176,10 @@
                                     hints))
                   (loop (cdr as) (cdr ps) (+ idx 1)))))))))))
 
+;;; Handle inlayHint/resolve — return the hint unchanged
+(def (handle-inlay-hint-resolve params)
+  params)
+
 ;;; Create an InlayHint object
 ;;; Position is approximate — placed at start of line + offset
 (def (make-inlay-hint line label kind)

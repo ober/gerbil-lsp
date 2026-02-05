@@ -10,20 +10,23 @@ A Language Server Protocol (LSP) implementation for [Gerbil Scheme](https://cons
 | Completion         | `textDocument/completion`         | Symbols from current file, workspace, and Gerbil keywords with auto-import  |
 | Hover              | `textDocument/hover`              | Symbol info with kind, signature, and source location                       |
 | Go to Definition   | `textDocument/definition`         | Jump to symbol definition across workspace and stdlib                       |
+| Go to Declaration  | `textDocument/declaration`        | Jump to declaration (same as definition in Gerbil)                          |
+| Go to Type Def     | `textDocument/typeDefinition`     | Navigate from constructors/predicates/accessors to their type               |
 | Find References    | `textDocument/references`         | Locate all occurrences of a symbol                                          |
 | Document Symbols   | `textDocument/documentSymbol`     | Outline view of definitions in current file                                 |
 | Workspace Symbols  | `workspace/symbol`                | Search definitions across all indexed files                                 |
 | Rename             | `textDocument/rename`             | Scope-aware rename, skips strings and comments                              |
 | Formatting         | `textDocument/formatting`         | Format via Gambit's `pretty-print`                                          |
 | Signature Help     | `textDocument/signatureHelp`      | Function signatures while typing arguments                                  |
-| Code Action        | `textDocument/codeAction`         | Quick fixes and refactoring actions                                         |
+| Code Action        | `textDocument/codeAction`         | Quick fixes and refactoring actions (with lazy resolution)                  |
 | Code Lens          | `textDocument/codeLens`           | Inline actions (run test, show references)                                  |
 | Execute Command    | `workspace/executeCommand`        | Run test files, show reference counts                                       |
 | Document Highlight | `textDocument/documentHighlight`  | Highlight occurrences of symbol under cursor                                |
 | Folding Range      | `textDocument/foldingRange`       | Code folding for top-level forms                                            |
 | Selection Range    | `textDocument/selectionRange`     | Expand/shrink selection by syntax                                           |
 | Document Link      | `textDocument/documentLink`       | Clickable module import paths                                               |
-| Inlay Hints        | `textDocument/inlayHint`          | Inline type/parameter hints                                                 |
+| Inlay Hints        | `textDocument/inlayHint`          | Inline type/parameter hints (with lazy resolution)                          |
+| File Rename        | `workspace/willRenameFiles`       | Automatically update import paths when `.ss` files are renamed              |
 
 ### Symbol Recognition
 
@@ -137,6 +140,8 @@ Open any `.ss` file in `gerbil-mode` and run `M-x eglot`. The `gerbil-lsp-mode` 
 | Completion | `C-M-i` | Trigger with `(` `:` `/` `.` |
 | Hover | (automatic) | Via eldoc |
 | Go to Definition | `M-.` or `C-c l d` | `xref-find-definitions` |
+| Go to Declaration | `C-c l D` | `eglot-find-declaration` |
+| Go to Type Definition | `C-c l T` | `eglot-find-typeDefinition` |
 | Find References | `M-?` or `C-c l R` | `xref-find-references` |
 | Rename | `C-c l n` | `eglot-rename` |
 | Format Buffer | `C-c l f` | `eglot-format-buffer` |
@@ -230,13 +235,15 @@ lsp/
     ├── formatting.ss       textDocument/formatting
     ├── signature.ss        textDocument/signatureHelp
     ├── execute-command.ss  workspace/executeCommand (run test, show refs)
-    ├── code-action.ss      textDocument/codeAction
+    ├── code-action.ss      textDocument/codeAction + codeAction/resolve
     ├── code-lens.ss        textDocument/codeLens
     ├── document-highlight.ss  textDocument/documentHighlight
     ├── document-link.ss    textDocument/documentLink
     ├── folding-range.ss    textDocument/foldingRange
     ├── selection-range.ss  textDocument/selectionRange
-    ├── inlay-hints.ss      textDocument/inlayHint
+    ├── inlay-hints.ss      textDocument/inlayHint + inlayHint/resolve
+    ├── type-definition.ss  textDocument/typeDefinition
+    ├── will-rename.ss      workspace/willRenameFiles
     └── pull-diagnostics.ss textDocument/diagnostic (pull model)
 ```
 

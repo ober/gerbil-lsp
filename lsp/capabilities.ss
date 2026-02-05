@@ -40,6 +40,9 @@
    ;; Go to definition
    ("definitionProvider" #t)
 
+   ;; Go to declaration (same as definition in Gerbil)
+   ("declarationProvider" #t)
+
    ;; Find references
    ("referencesProvider" #t)
 
@@ -63,7 +66,8 @@
 
    ;; Code actions
    ("codeActionProvider"
-    (hash ("codeActionKinds" ["quickfix" "source.organizeImports"])))
+    (hash ("codeActionKinds" ["quickfix" "source.organizeImports"])
+          ("resolveProvider" #t)))
 
    ;; Document highlight
    ("documentHighlightProvider" #t)
@@ -85,10 +89,13 @@
           ("full" #t)))
 
    ;; Inlay hints
-   ("inlayHintProvider" #t)
+   ("inlayHintProvider" (hash ("resolveProvider" #t)))
 
    ;; Call hierarchy
    ("callHierarchyProvider" #t)
+
+   ;; Go to type definition
+   ("typeDefinitionProvider" #t)
 
    ;; Go to implementation
    ("implementationProvider" #t)
@@ -115,9 +122,12 @@
    ("workspace"
     (hash ("workDoneProgress" #t)
           ("workspaceFolders"
-           (hash ("supported" #t) ("changeNotifications" #t)))))
-   ("workspace"
-    (hash ("workDoneProgress" #t)
-          ("workspaceFolders"
-           (hash ("supported" #t)
-                 ("changeNotifications" #t)))))))
+           (hash ("supported" #t) ("changeNotifications" #t)))
+          ("fileOperations"
+           (hash ("willRename"
+                  (hash ("filters"
+                         (vector
+                           (hash ("scheme" "file")
+                                 ("pattern"
+                                  (hash ("glob" "**/*.ss"))))))))))))
+   ))

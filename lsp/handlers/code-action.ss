@@ -21,7 +21,7 @@
 (def CodeActionKind.SourceOrganizeImports "source.organizeImports")
 
 ;;; Handle textDocument/codeAction
-;;; Returns CodeAction[] with available actions for the given range/context
+;;; Returns CodeAction[] with available actions (lazy — no edit, just data)
 (def (handle-code-action params)
   (let* ((td (hash-ref params "textDocument" (hash)))
          (uri (hash-ref td "uri" ""))
@@ -45,34 +45,57 @@
         (list->vector actions))
       [])))
 
-;;; Create an "Organize Imports" code action
-;;; Sorts import specs alphabetically
+;;; Handle codeAction/resolve
+;;; Receives a code action with data, computes the edit, returns the full action
+(def (handle-code-action-resolve params)
+  (let ((data (hash-ref params "data" #f)))
+    (if (not data)
+      params  ;; No data — return as-is
+      (let ((type (hash-ref data "type" ""))
+            (uri (hash-ref data "uri" "")))
+        (with-catch
+          (lambda (e)
+            (lsp-debug "code action resolve failed: ~a" e)
+            params)
+          (lambda ()
+            (let ((doc (get-document uri)))
+              (if (not doc)
+                params
+                (let ((text (document-text doc)))
+                  (cond
+                    ((string=? type "organize-imports")
+                     (let ((edit (compute-organize-imports-edit uri text)))
+                       (if edit
+                         (begin (hash-put! params "edit" edit) params)
+                         params)))
+                    ((string=? type "add-import")
+                     (let* ((module-name (hash-ref data "module" ""))
+                            (edit (compute-add-import-edit uri text module-name)))
+                       (hash-put! params "edit" edit)
+                       params))
+                    ((string=? type "remove-import")
+                     (let* ((line (hash-ref data "line" 0))
+                            (edit (make-remove-import-edit uri text
+                                    (hash-ref data "importName" "") line)))
+                       (if edit
+                         (begin (hash-put! params "edit" edit) params)
+                         params)))
+                    (else params)))))))))))
+
+;;; Create an "Organize Imports" code action (lazy — data only, no edit)
 (def (make-organize-imports-action uri text)
   (let ((forms (parse-source text)))
     (let ((import-forms (find-import-forms forms)))
       (if (null? import-forms)
         #f
-        ;; Build a single organized import form
         (let ((all-specs (collect-all-import-specs import-forms)))
           (if (< (length all-specs) 2)
-            #f  ;; Not enough imports to organize
-            (let* ((sorted-specs (sort-import-specs all-specs))
-                   (first-import (car import-forms))
-                   (last-import (last-elem import-forms))
-                   (start-line (located-form-line first-import))
-                   (end-line (located-form-end-line last-import))
-                   (end-col (located-form-end-col last-import))
-                   (new-text (format-organized-imports sorted-specs)))
-              (hash
-                ("title" "Organize Imports")
-                ("kind" CodeActionKind.SourceOrganizeImports)
-                ("edit"
-                 (hash ("changes"
-                        (hash (uri
-                               (vector
-                                 (make-text-edit
-                                   (make-lsp-range start-line 0 end-line end-col)
-                                   new-text)))))))))))))))
+            #f
+            (hash
+              ("title" "Organize Imports")
+              ("kind" CodeActionKind.SourceOrganizeImports)
+              ("data" (hash ("type" "organize-imports")
+                            ("uri" uri))))))))))
 
 ;;; Find all top-level import forms
 (def (find-import-forms forms)
@@ -125,6 +148,41 @@
       (display ")" out)
       (get-output-string out))))
 
+;;; Compute the workspace edit for organizing imports
+(def (compute-organize-imports-edit uri text)
+  (let ((forms (parse-source text)))
+    (let ((import-forms (find-import-forms forms)))
+      (if (null? import-forms)
+        #f
+        (let ((all-specs (collect-all-import-specs import-forms)))
+          (if (< (length all-specs) 2)
+            #f
+            (let* ((sorted-specs (sort-import-specs all-specs))
+                   (first-import (car import-forms))
+                   (last-import (last-elem import-forms))
+                   (start-line (located-form-line first-import))
+                   (end-line (located-form-end-line last-import))
+                   (end-col (located-form-end-col last-import))
+                   (new-text (format-organized-imports sorted-specs)))
+              (hash ("changes"
+                     (hash (uri
+                            (vector
+                              (make-text-edit
+                                (make-lsp-range start-line 0 end-line end-col)
+                                new-text)))))))))))))
+
+;;; Compute the workspace edit for adding an import
+(def (compute-add-import-edit uri text module-name)
+  (let* ((forms (parse-source text))
+         (insert-pos (find-import-insert-position forms text)))
+    (hash ("changes"
+           (hash (uri
+                  (vector
+                    (make-text-edit
+                      (make-lsp-range (car insert-pos) (cdr insert-pos)
+                                      (car insert-pos) (cdr insert-pos))
+                      (format "\n(import ~a)" module-name)))))))))
+
 ;;; Create "Add missing import" code actions from diagnostics
 ;;; Looks for unbound identifier errors and suggests imports
 (def (make-add-import-actions uri text diags)
@@ -175,21 +233,15 @@
       *stdlib-symbols*)
     (reverse result)))
 
-;;; Create a single "Add import" code action
+;;; Create a single "Add import" code action (lazy — data only)
 (def (make-add-import-action uri text sym-name module-name)
-  (let* ((forms (parse-source text))
-         (insert-pos (find-import-insert-position forms text)))
-    (hash
-      ("title" (format "Add import ~a from ~a" sym-name module-name))
-      ("kind" CodeActionKind.QuickFix)
-      ("edit"
-       (hash ("changes"
-              (hash (uri
-                     (vector
-                       (make-text-edit
-                         (make-lsp-range (car insert-pos) (cdr insert-pos)
-                                         (car insert-pos) (cdr insert-pos))
-                         (format "\n(import ~a)" module-name)))))))))))
+  (hash
+    ("title" (format "Add import ~a from ~a" sym-name module-name))
+    ("kind" CodeActionKind.QuickFix)
+    ("data" (hash ("type" "add-import")
+                  ("uri" uri)
+                  ("symbol" sym-name)
+                  ("module" module-name)))))
 
 ;;; Find where to insert a new import statement
 ;;; Returns (line . col) — after the last existing import, or at line 0
@@ -245,7 +297,7 @@
     (car lst)
     (last-elem (cdr lst))))
 
-;;; Create "Remove unused import" code actions from diagnostics
+;;; Create "Remove unused import" code actions from diagnostics (lazy — data only)
 (def (make-remove-unused-import-actions uri text diags)
   (let ((actions '()))
     (for-each
@@ -254,24 +306,22 @@
           (let ((code (hash-ref diag "code" ""))
                 (msg (hash-ref diag "message" "")))
             (when (string=? code "unused-import")
-              ;; Extract the import name from the message
               (let ((import-name (extract-unused-import-name msg)))
                 (when import-name
                   (let ((range (hash-ref diag "range" #f)))
                     (when range
                       (let* ((start (hash-ref range "start" (hash)))
-                             (line (hash-ref start "line" 0))
-                             (line-text (text-line-at text line))
-                             ;; Find the full extent of this import line/spec
-                             (edit (make-remove-import-edit uri text import-name line)))
-                        (when edit
-                          (set! actions
-                            (cons (hash
-                                    ("title" (format "Remove unused import: ~a" import-name))
-                                    ("kind" CodeActionKind.QuickFix)
-                                    ("diagnostics" (vector diag))
-                                    ("edit" edit))
-                                  actions))))))))))))
+                             (line (hash-ref start "line" 0)))
+                        (set! actions
+                          (cons (hash
+                                  ("title" (format "Remove unused import: ~a" import-name))
+                                  ("kind" CodeActionKind.QuickFix)
+                                  ("diagnostics" (vector diag))
+                                  ("data" (hash ("type" "remove-import")
+                                                ("uri" uri)
+                                                ("importName" import-name)
+                                                ("line" line))))
+                                actions)))))))))))
       (if (vector? diags) (vector->list diags) '()))
     actions))
 
