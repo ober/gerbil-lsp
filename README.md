@@ -85,26 +85,27 @@ make install   # copies to ~/.gerbil/bin/gerbil-lsp
 
 ## Emacs Setup
 
-### 1. Load the Eglot integration
+The Emacs integration is provided by `eglot-gerbil`, shipped in the `emacs/` directory of this repository. It registers `gerbil-lsp` with Eglot and adds support for features that Eglot does not handle natively (code lenses, call hierarchy, type hierarchy, selection ranges, etc.).
+
+### 1. Load eglot-gerbil
 
 Add to your Emacs init file (`~/.emacs.d/init.el` or `~/.emacs`):
 
 ```elisp
-;; Point to where you cloned gerbil-lsp
 (add-to-list 'load-path "/path/to/gerbil-lsp/emacs")
-(require 'gerbil-lsp)
+(require 'eglot-gerbil)
 ```
 
 ### 2. (Optional) Auto-start on gerbil-mode
 
 ```elisp
-(add-hook 'gerbil-mode-hook #'eglot-ensure)
+(setq eglot-gerbil-auto-start t)
 ```
 
-Or use the built-in option:
+Or use the standard Eglot hook:
 
 ```elisp
-(setq gerbil-lsp-auto-start t)
+(add-hook 'gerbil-mode-hook #'eglot-ensure)
 ```
 
 ### 3. (Optional) Customize server path
@@ -112,27 +113,29 @@ Or use the built-in option:
 If `gerbil-lsp` is not on your PATH:
 
 ```elisp
-(setq gerbil-lsp-server-path "/path/to/gerbil-lsp/.gerbil/bin/gerbil-lsp")
+(setq eglot-gerbil-server-path "/path/to/gerbil-lsp/.gerbil/bin/gerbil-lsp")
 ```
 
 ### 4. (Optional) Set log level
 
 ```elisp
-(setq gerbil-lsp-log-level "debug")  ;; debug | info | warn | error
+(setq eglot-gerbil-log-level "debug")  ;; debug | info | warn | error
 ```
 
 ### 5. (Optional) Configure features
 
 ```elisp
-(setq gerbil-lsp-enable-inlay-hints t)   ;; parameter name hints (default: t)
-(setq gerbil-lsp-enable-code-lenses t)   ;; reference counts & test runners (default: t)
+(setq eglot-gerbil-enable-inlay-hints t)   ;; parameter name hints (default: t)
+(setq eglot-gerbil-enable-code-lenses t)   ;; reference counts & test runners (default: t)
 ```
 
 ### Usage
 
-Open any `.ss` file in `gerbil-mode` and run `M-x eglot`. The `gerbil-lsp-mode` minor mode activates automatically, providing keybindings and feature integration.
+Open any `.ss` file in `gerbil-mode` and run `M-x eglot`. The `eglot-gerbil-mode` minor mode activates automatically, providing keybindings and feature integration.
 
-#### Standard LSP Features (via Eglot)
+#### Standard LSP Features (handled by Eglot)
+
+These work out of the box -- Eglot supports them natively:
 
 | Feature | Key | Command |
 |---------|-----|---------|
@@ -149,22 +152,24 @@ Open any `.ss` file in `gerbil-mode` and run `M-x eglot`. The `gerbil-lsp-mode` 
 | Implementation | `C-c l i` | `eglot-find-implementation` |
 | Document Symbols | `M-x imenu` | Outline via imenu |
 
-#### Extended Features (gerbil-lsp-mode)
+#### Extended Features (via eglot-gerbil)
+
+Eglot has no built-in support for these LSP capabilities. The `eglot-gerbil` package bridges the gap:
 
 | Feature | Key | Command |
 |---------|-----|---------|
-| Run Test | `C-c l t` | `gerbil-lsp-run-test` |
-| Show References | `C-c l r` | `gerbil-lsp-show-references` |
-| Incoming Calls | `C-c l c i` | `gerbil-lsp-incoming-calls` |
-| Outgoing Calls | `C-c l c o` | `gerbil-lsp-outgoing-calls` |
-| Supertypes | `C-c l h s` | `gerbil-lsp-supertypes` |
-| Subtypes | `C-c l h b` | `gerbil-lsp-subtypes` |
-| Expand Selection | `C-c l +` | `gerbil-lsp-expand-selection` |
-| Shrink Selection | `C-c l -` | `gerbil-lsp-shrink-selection` |
-| Refresh Lenses | `C-c l l` | `gerbil-lsp-refresh-code-lenses` |
-| Workspace Symbols | `C-c l s` or `C-c l w` | `gerbil-lsp-workspace-symbol` |
-| Organize Imports | `C-c l o` | `gerbil-lsp-organize-imports` |
-| Edit Config | `M-x gerbil-lsp-edit-project-config` | Open `.gerbil-lsp.json` |
+| Run Test | `C-c l t` | `eglot-gerbil-run-test` |
+| Show References | `C-c l r` | `eglot-gerbil-show-references` |
+| Incoming Calls | `C-c l c i` | `eglot-gerbil-incoming-calls` |
+| Outgoing Calls | `C-c l c o` | `eglot-gerbil-outgoing-calls` |
+| Supertypes | `C-c l h s` | `eglot-gerbil-supertypes` |
+| Subtypes | `C-c l h b` | `eglot-gerbil-subtypes` |
+| Expand Selection | `C-c l +` | `eglot-gerbil-expand-selection` |
+| Shrink Selection | `C-c l -` | `eglot-gerbil-shrink-selection` |
+| Refresh Lenses | `C-c l l` | `eglot-gerbil-refresh-code-lenses` |
+| Workspace Symbols | `C-c l s` | `eglot-gerbil-workspace-symbol` |
+| Organize Imports | `C-c l o` | `eglot-gerbil-organize-imports` |
+| Edit Config | `C-c l p` | `eglot-gerbil-edit-project-config` |
 
 #### Code Lenses
 
@@ -179,9 +184,10 @@ Parameter name hints appear at function call sites when the function has
 
 #### Semantic Tokens
 
-The server provides semantic highlighting with 10 token types. Custom faces
-(`gerbil-lsp-keyword-face`, `gerbil-lsp-macro-face`, etc.) are defined for
-each type. Customize them via `M-x customize-group RET gerbil-lsp`.
+The server provides semantic highlighting with 10 token types. The
+eglot-gerbil package defines custom faces (`eglot-gerbil-keyword-face`,
+`eglot-gerbil-macro-face`, etc.) for each type. Customize them via
+`M-x customize-group RET eglot-gerbil`.
 
 ## CLI Usage
 
@@ -334,7 +340,7 @@ The formatter reads each top-level S-expression and outputs it through Gambit's 
 
 ## Other Editor Support
 
-While primary integration is with Emacs/Eglot, `gerbil-lsp` implements standard LSP over stdio and should work with any LSP client:
+While primary integration is with Emacs via `eglot-gerbil` (see `emacs/` directory), `gerbil-lsp` implements standard LSP over stdio and should work with any LSP client:
 
 ### Neovim (nvim-lspconfig)
 
@@ -423,7 +429,7 @@ gerbil-lsp/
 ├── build.ss            Build script listing all modules
 ├── Makefile            Build/clean/install targets
 ├── lsp/                All source code (30+ modules)
-├── emacs/              Emacs integration
+├── emacs/              Emacs integration (eglot-gerbil.el)
 └── test/               Test suites
 ```
 
