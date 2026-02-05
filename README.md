@@ -98,6 +98,12 @@ Add to your Emacs init file (`~/.emacs.d/init.el` or `~/.emacs`):
 (add-hook 'gerbil-mode-hook #'eglot-ensure)
 ```
 
+Or use the built-in option:
+
+```elisp
+(setq gerbil-lsp-auto-start t)
+```
+
 ### 3. (Optional) Customize server path
 
 If `gerbil-lsp` is not on your PATH:
@@ -112,18 +118,65 @@ If `gerbil-lsp` is not on your PATH:
 (setq gerbil-lsp-log-level "debug")  ;; debug | info | warn | error
 ```
 
+### 5. (Optional) Configure features
+
+```elisp
+(setq gerbil-lsp-enable-inlay-hints t)   ;; parameter name hints (default: t)
+(setq gerbil-lsp-enable-code-lenses t)   ;; reference counts & test runners (default: t)
+```
+
 ### Usage
 
-Open any `.ss` file in `gerbil-mode` and run `M-x eglot`. The LSP server starts automatically and provides:
+Open any `.ss` file in `gerbil-mode` and run `M-x eglot`. The `gerbil-lsp-mode` minor mode activates automatically, providing keybindings and feature integration.
 
-- **Diagnostics** -- errors appear as underlines and in the minibuffer
-- **Completion** -- trigger with `(`, `:`, `/`, `.` or invoke via `C-M-i`
-- **Hover** -- `M-x eldoc` or hover with mouse
-- **Go to Definition** -- `M-.`
-- **Find References** -- `M-?`
-- **Rename** -- `M-x eglot-rename`
-- **Format** -- `M-x eglot-format-buffer`
-- **Document Symbols** -- `M-x imenu`
+#### Standard LSP Features (via Eglot)
+
+| Feature | Key | Command |
+|---------|-----|---------|
+| Diagnostics | (automatic) | Errors appear as underlines |
+| Completion | `C-M-i` | Trigger with `(` `:` `/` `.` |
+| Hover | (automatic) | Via eldoc |
+| Go to Definition | `M-.` or `C-c l d` | `xref-find-definitions` |
+| Find References | `M-?` or `C-c l R` | `xref-find-references` |
+| Rename | `C-c l n` | `eglot-rename` |
+| Format Buffer | `C-c l f` | `eglot-format-buffer` |
+| Code Actions | `C-c l a` | `eglot-code-actions` |
+| Implementation | `C-c l i` | `eglot-find-implementation` |
+| Document Symbols | `M-x imenu` | Outline via imenu |
+
+#### Extended Features (gerbil-lsp-mode)
+
+| Feature | Key | Command |
+|---------|-----|---------|
+| Run Test | `C-c l t` | `gerbil-lsp-run-test` |
+| Show References | `C-c l r` | `gerbil-lsp-show-references` |
+| Incoming Calls | `C-c l c i` | `gerbil-lsp-incoming-calls` |
+| Outgoing Calls | `C-c l c o` | `gerbil-lsp-outgoing-calls` |
+| Supertypes | `C-c l h s` | `gerbil-lsp-supertypes` |
+| Subtypes | `C-c l h b` | `gerbil-lsp-subtypes` |
+| Expand Selection | `C-c l +` | `gerbil-lsp-expand-selection` |
+| Shrink Selection | `C-c l -` | `gerbil-lsp-shrink-selection` |
+| Refresh Lenses | `C-c l l` | `gerbil-lsp-refresh-code-lenses` |
+| Workspace Symbols | `C-c l s` or `C-c l w` | `gerbil-lsp-workspace-symbol` |
+| Organize Imports | `C-c l o` | `gerbil-lsp-organize-imports` |
+| Edit Config | `M-x gerbil-lsp-edit-project-config` | Open `.gerbil-lsp.json` |
+
+#### Code Lenses
+
+Code lenses appear above function definitions showing reference counts and
+"Run test" buttons for test suites. They refresh automatically on save.
+Click or press `RET` on a lens to execute its action.
+
+#### Inlay Hints
+
+Parameter name hints appear at function call sites when the function has
+2+ parameters. Requires Emacs 29.1+ and Eglot 1.15+.
+
+#### Semantic Tokens
+
+The server provides semantic highlighting with 10 token types. Custom faces
+(`gerbil-lsp-keyword-face`, `gerbil-lsp-macro-face`, etc.) are defined for
+each type. Customize them via `M-x customize-group RET gerbil-lsp`.
 
 ## CLI Usage
 
