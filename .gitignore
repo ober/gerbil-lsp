@@ -6,3 +6,4 @@
 .#*
 build-deps
 /manifest.ss
+.gerbil-lsp-cache
