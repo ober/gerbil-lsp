@@ -4,6 +4,7 @@
         :std/sugar
         ./util/log
         ./server
+        ./validation
         ./handlers/lifecycle
         ./handlers/sync
         ./handlers/diagnostics
@@ -44,7 +45,9 @@
       help: "Log level: debug, info, warn, error"
       default: "info")
     (flag 'version "--version"
-      help: "Print version and exit")))
+      help: "Print version and exit")
+    (flag 'validate "--validate"
+      help: "Enable LSP response validation (debug mode)")))
 
 (def (gerbil-lsp-main opt)
   (when (hash-ref opt 'version #f)
@@ -52,6 +55,9 @@
     (exit 0))
   ;; Set log level
   (set-log-level! (log-level-from-string (hash-ref opt 'log-level "info")))
+  ;; Enable validation if requested
+  (when (hash-ref opt 'validate #f)
+    (enable-validation!))
   ;; Register all handlers
   (register-all-handlers!)
   ;; Start the server on stdio

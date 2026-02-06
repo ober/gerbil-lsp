@@ -9,6 +9,7 @@
     "lsp/transport"
     "lsp/jsonrpc"
     "lsp/types"
+    "lsp/validation"
     "lsp/capabilities"
     "lsp/state"
     "lsp/analysis/document"

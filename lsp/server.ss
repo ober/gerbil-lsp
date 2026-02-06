@@ -6,7 +6,8 @@
         ./util/log
         ./transport
         ./jsonrpc
-        ./state)
+        ./state
+        ./validation)
 (export #t)
 
 ;;; Method handler registry: method-string → handler-fn
@@ -157,6 +158,7 @@
                    (format "Internal error: ~a" e))))
              (lambda ()
                (let ((result (handler params)))
+                 (validate-and-log! method result)
                  (write-message output-port
                    (make-response id result)))))
            (begin
