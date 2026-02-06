@@ -81,7 +81,7 @@ Set to an absolute path if the binary is not on your PATH."
   :type 'boolean
   :group 'eglot-gerbil)
 
-(defcustom eglot-gerbil-enable-validation nil
+(defcustom eglot-gerbil-enable-validation t
   "Enable LSP response validation (debug mode).
 When non-nil, the server validates all outgoing responses against
 LSP protocol schemas and logs warnings for violations.  Useful
