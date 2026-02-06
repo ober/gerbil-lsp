@@ -81,6 +81,14 @@ Set to an absolute path if the binary is not on your PATH."
   :type 'boolean
   :group 'eglot-gerbil)
 
+(defcustom eglot-gerbil-enable-validation nil
+  "Enable LSP response validation (debug mode).
+When non-nil, the server validates all outgoing responses against
+LSP protocol schemas and logs warnings for violations.  Useful
+during development to catch protocol conformance issues."
+  :type 'boolean
+  :group 'eglot-gerbil)
+
 (defcustom eglot-gerbil-auto-start nil
   "When non-nil, automatically start Eglot in `gerbil-mode' buffers."
   :type 'boolean
@@ -98,9 +106,11 @@ Set to an absolute path if the binary is not on your PATH."
 
 (defun eglot-gerbil--server-command (&rest _args)
   "Return the command to start the gerbil-lsp server."
-  (list eglot-gerbil-server-path
-        "--stdio"
-        "--log-level" eglot-gerbil-log-level))
+  (append (list eglot-gerbil-server-path
+                "--stdio"
+                "--log-level" eglot-gerbil-log-level)
+          (when eglot-gerbil-enable-validation
+            (list "--validate"))))
 
 ;;;###autoload
 (with-eval-after-load 'eglot
