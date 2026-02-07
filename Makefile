@@ -13,6 +13,7 @@ clean:
 install: build
 	mkdir -p ~/.gerbil/bin
 	sudo cp .gerbil/bin/gerbil-lsp /usr/local/bin/
+	sudo codesign --force --sign - /usr/local/bin/gerbil-lsp
 
 test: build
 	@export GERBIL_PATH=$(CURDIR)/.gerbil; \
