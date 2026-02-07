@@ -154,36 +154,117 @@
       ;; Only show hints if we have at least 2 params (single-arg is obvious)
       (if (< (length param-names) 2)
         '()
-        (let loop ((as args) (ps params) (idx 0))
-          (if (or (null? as) (null? ps))
-            (reverse hints)
-            (let* ((param-name (car ps))
-                   ;; Skip keyword params (they're self-documenting)
-                   (is-keyword? (and (> (string-length param-name) 0)
-                                     (char=? (string-ref param-name
-                                               (- (string-length param-name) 1))
-                                             #\:))))
-              (if is-keyword?
-                ;; Skip keyword and its value
-                (loop (if (pair? (cdr as)) (cddr as) '())
-                      (if (pair? (cdr ps)) (cddr ps) '())
-                      (+ idx 2))
-                (begin
-                  (set! hints (cons (make-inlay-hint
-                                      context-line
-                                      param-name
-                                      InlayHintKind.Parameter)
-                                    hints))
-                  (loop (cdr as) (cdr ps) (+ idx 1)))))))))))
+        (let* ((line-text (text-line-at text context-line))
+               (arg-cols (find-arg-positions line-text)))
+          (let loop ((as args) (ps params) (idx 0))
+            (if (or (null? as) (null? ps))
+              (reverse hints)
+              (let* ((param-name (car ps))
+                     ;; Skip keyword params (they're self-documenting)
+                     (is-keyword? (and (> (string-length param-name) 0)
+                                       (char=? (string-ref param-name
+                                                 (- (string-length param-name) 1))
+                                               #\:)))
+                     ;; Use actual column if available, fall back to 0
+                     (col (if (< idx (length arg-cols))
+                            (list-ref arg-cols idx)
+                            0)))
+                (if is-keyword?
+                  ;; Skip keyword and its value
+                  (loop (if (pair? (cdr as)) (cddr as) '())
+                        (if (pair? (cdr ps)) (cddr ps) '())
+                        (+ idx 2))
+                  (begin
+                    (set! hints (cons (make-inlay-hint
+                                        context-line
+                                        col
+                                        param-name
+                                        InlayHintKind.Parameter)
+                                      hints))
+                    (loop (cdr as) (cdr ps) (+ idx 1))))))))))))
 
 ;;; Handle inlayHint/resolve — return the hint unchanged
 (def (handle-inlay-hint-resolve params)
   params)
 
+;;; Find the column positions of each argument in a function call on a line.
+;;; Given a line like "(my-func arg1 (+ 1 2) arg3)" finds the start column
+;;; of each argument after the function name.
+;;; Returns a list of 0-based column positions, one per argument found.
+(def (find-arg-positions line)
+  (let ((len (string-length line)))
+    (if (= len 0) '()
+      ;; Find the opening paren
+      (let loop-start ((i 0))
+        (cond
+          ((>= i len) '())
+          ((char=? (string-ref line i) #\()
+           ;; Skip past function name
+           (let skip-func ((j (+ i 1)))
+             (cond
+               ((>= j len) '())
+               ((char-whitespace? (string-ref line j))
+                ;; Now find each argument start position
+                (let loop-args ((k j) (positions '()) (depth 0) (in-string? #f) (escape? #f))
+                  (cond
+                    ((>= k len) (reverse positions))
+                    ;; Handle escape in string
+                    (escape?
+                     (loop-args (+ k 1) positions depth in-string? #f))
+                    ;; Handle string content
+                    (in-string?
+                     (let ((c (string-ref line k)))
+                       (cond
+                         ((char=? c #\\)
+                          (loop-args (+ k 1) positions depth #t #t))
+                         ((char=? c #\")
+                          (loop-args (+ k 1) positions depth #f #f))
+                         (else
+                          (loop-args (+ k 1) positions depth #t #f)))))
+                    (else
+                     (let ((c (string-ref line k)))
+                       (cond
+                         ;; String start
+                         ((char=? c #\")
+                          (if (and (= depth 0)
+                                   (or (null? positions)
+                                       ;; previous char was whitespace = new arg
+                                       (and (> k 0)
+                                            (char-whitespace? (string-ref line (- k 1))))))
+                            (loop-args (+ k 1) (cons k positions) 0 #t #f)
+                            (loop-args (+ k 1) positions depth #t #f)))
+                         ;; Open paren at depth 0 = start of nested arg
+                         ((char=? c #\()
+                          (if (and (= depth 0)
+                                   (> k j)
+                                   (or (null? positions)
+                                       (and (> k 0)
+                                            (char-whitespace? (string-ref line (- k 1))))))
+                            (loop-args (+ k 1) (cons k positions) (+ depth 1) #f #f)
+                            (loop-args (+ k 1) positions (+ depth 1) #f #f)))
+                         ;; Close paren
+                         ((char=? c #\))
+                          (if (= depth 0)
+                            (reverse positions)  ;; end of call
+                            (loop-args (+ k 1) positions (- depth 1) #f #f)))
+                         ;; Whitespace at depth 0 = potential arg boundary
+                         ((and (char-whitespace? c) (= depth 0))
+                          (loop-args (+ k 1) positions 0 #f #f))
+                         ;; Non-whitespace at depth 0 after whitespace = new arg
+                         ((and (= depth 0)
+                               (> k 0)
+                               (char-whitespace? (string-ref line (- k 1))))
+                          (loop-args (+ k 1) (cons k positions) 0 #f #f))
+                         (else
+                          (loop-args (+ k 1) positions depth #f #f))))))))
+               ;; Still in function name
+               (else (skip-func (+ j 1))))))
+          ;; Skip leading whitespace before paren
+          (else (loop-start (+ i 1))))))))
+
 ;;; Create an InlayHint object
-;;; Position is approximate — placed at start of line + offset
-(def (make-inlay-hint line label kind)
-  (hash ("position" (make-lsp-position line 0))
+(def (make-inlay-hint line col label kind)
+  (hash ("position" (make-lsp-position line col))
         ("label" (string-append label ":"))
         ("kind" kind)
         ("paddingRight" #t)))

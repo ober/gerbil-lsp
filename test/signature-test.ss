@@ -2,6 +2,11 @@
 ;;; Tests for lsp/handlers/signature
 (import :std/test
         :lsp/lsp/types
+        :lsp/lsp/state
+        :lsp/lsp/analysis/document
+        :lsp/lsp/analysis/parser
+        :lsp/lsp/analysis/symbols
+        :lsp/lsp/validation
         :lsp/lsp/handlers/signature)
 
 (export signature-test-suite)
@@ -73,12 +78,41 @@
       (let ((result (find-enclosing-call "(foo x y)" 0 5)))
         (check (pair? result) => #t)
         (check-equal? (car result) "foo")
-        ;; arg-count should be 0 or 1 depending on position
+        ;; arg-index should be >= 0
+        (check (integer? (cdr result)) => #t)
         (check (>= (cdr result) 0) => #t)))
 
     (test-case "find-enclosing-call: multiline"
       (let ((result (find-enclosing-call "(define (add a b)\n  (+ a b))" 1 4)))
         (check (pair? result) => #t)))
+
+    ;; --- handle-signature-help: integration ---
+    (test-case "handle-signature-help: finds signature in open document"
+      (let* ((uri "file:///test-sig.ss")
+             (text "(def (add a b) (+ a b))\n(add 1 2)")
+             (doc (make-document uri 1 text "gerbil"))
+             (forms (parse-source text))
+             (syms (extract-symbols forms)))
+        (set-document! uri doc)
+        (set-file-symbols! uri syms)
+        (let* ((params (hash ("textDocument" (hash ("uri" uri)))
+                             ("position" (hash ("line" 1) ("character" 5)))))
+               (result (handle-signature-help params)))
+          (when (and result (not (void? result)))
+            (check (hash-table? result) => #t)
+            (let ((sigs (hash-ref result "signatures" [])))
+              (check (vector? sigs) => #t))
+            ;; Validate against LSP schema
+            (let ((violations (validate-response "textDocument/signatureHelp" result)))
+              (check (null? violations) => #t))))
+        (remove-document! uri)
+        (remove-file-symbols! uri)))
+
+    (test-case "handle-signature-help: returns void for no document"
+      (let* ((params (hash ("textDocument" (hash ("uri" "file:///nonexistent.ss")))
+                           ("position" (hash ("line" 0) ("character" 0)))))
+             (result (handle-signature-help params)))
+        (check (void? result) => #t)))
   ))
 
 (def main

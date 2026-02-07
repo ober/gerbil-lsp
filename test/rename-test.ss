@@ -4,6 +4,11 @@
         :lsp/lsp/types
         :lsp/lsp/util/position
         :lsp/lsp/util/string
+        :lsp/lsp/state
+        :lsp/lsp/analysis/document
+        :lsp/lsp/analysis/parser
+        :lsp/lsp/analysis/symbols
+        :lsp/lsp/validation
         :lsp/lsp/handlers/rename)
 
 (export rename-test-suite)
@@ -89,6 +94,49 @@
                      "x" "y")))
         ;; Only the code "x", not the one in comment
         (check (length edits) => 1)))
+
+    ;; --- handle-prepare-rename: integration ---
+    (test-case "handle-prepare-rename: returns range for symbol"
+      (let* ((uri "file:///test-rename.ss")
+             (text "(def (add a b) (+ a b))\n(add 1 2)")
+             (doc (make-document uri 1 text "gerbil"))
+             (forms (parse-source text))
+             (syms (extract-symbols forms)))
+        (set-document! uri doc)
+        (set-file-symbols! uri syms)
+        (let* ((params (hash ("textDocument" (hash ("uri" uri)))
+                             ("position" (hash ("line" 1) ("character" 1)))))
+               (result (handle-prepare-rename params)))
+          (when (and result (not (void? result)))
+            (check (hash-table? result) => #t)
+            (check (hash-table? (hash-ref result "range" #f)) => #t)
+            (check-equal? (hash-ref result "placeholder") "add")
+            ;; Validate against LSP schema
+            (let ((violations (validate-response "textDocument/prepareRename" result)))
+              (check (null? violations) => #t))))
+        (remove-document! uri)
+        (remove-file-symbols! uri)))
+
+    ;; --- handle-rename: integration ---
+    (test-case "handle-rename: returns workspace edit"
+      (let* ((uri "file:///test-rename2.ss")
+             (text "(def (add a b) (+ a b))\n(add 1 2)")
+             (doc (make-document uri 1 text "gerbil"))
+             (forms (parse-source text))
+             (syms (extract-symbols forms)))
+        (set-document! uri doc)
+        (set-file-symbols! uri syms)
+        (let* ((params (hash ("textDocument" (hash ("uri" uri)))
+                             ("position" (hash ("line" 1) ("character" 1)))
+                             ("newName" "plus")))
+               (result (handle-rename params)))
+          (when (and result (not (void? result)))
+            (check (hash-table? result) => #t)
+            ;; Validate against LSP schema
+            (let ((violations (validate-response "textDocument/rename" result)))
+              (check (null? violations) => #t))))
+        (remove-document! uri)
+        (remove-file-symbols! uri)))
   ))
 
 (def main

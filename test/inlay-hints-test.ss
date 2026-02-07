@@ -3,7 +3,10 @@
 (import :std/test
         :lsp/lsp/types
         :lsp/lsp/state
+        :lsp/lsp/analysis/document
+        :lsp/lsp/analysis/parser
         :lsp/lsp/analysis/symbols
+        :lsp/lsp/validation
         :lsp/lsp/handlers/inlay-hints)
 
 (export inlay-hints-test-suite)
@@ -72,15 +75,42 @@
     (test-case "lookup-param-names: not found"
       (check (lookup-param-names "nonexistent-func" "file:///test.ss") => #f))
 
+    ;; --- find-arg-positions ---
+    (test-case "find-arg-positions: simple call"
+      (let ((positions (find-arg-positions "(my-func arg1 arg2 arg3)")))
+        (check (length positions) => 3)
+        (check (car positions) => 9)
+        (check (cadr positions) => 14)
+        (check (caddr positions) => 19)))
+
+    (test-case "find-arg-positions: nested parens"
+      (let ((positions (find-arg-positions "(my-func (+ 1 2) arg2)")))
+        (check (length positions) => 2)
+        (check (car positions) => 9)
+        (check (cadr positions) => 17)))
+
+    (test-case "find-arg-positions: empty call"
+      (let ((positions (find-arg-positions "(my-func)")))
+        (check (length positions) => 0)))
+
+    (test-case "find-arg-positions: single arg"
+      (let ((positions (find-arg-positions "(my-func arg1)")))
+        (check (length positions) => 1)
+        (check (car positions) => 9)))
+
+    (test-case "find-arg-positions: empty string"
+      (check-equal? (find-arg-positions "") '()))
+
     ;; --- make-inlay-hint ---
     (test-case "make-inlay-hint: creates correct structure"
-      (let ((hint (make-inlay-hint 5 "param" InlayHintKind.Parameter)))
+      (let ((hint (make-inlay-hint 5 10 "param" InlayHintKind.Parameter)))
         (check (hash-table? hint) => #t)
         (check-equal? (hash-ref hint "label") "param:")
         (check (hash-ref hint "kind") => InlayHintKind.Parameter)
         (check (hash-ref hint "paddingRight") => #t)
         (let ((pos (hash-ref hint "position")))
-          (check (hash-ref pos "line") => 5))))
+          (check (hash-ref pos "line") => 5)
+          (check (hash-ref pos "character") => 10))))
 
     ;; --- generate-param-hints ---
     (test-case "generate-param-hints: skips common functions"
@@ -95,8 +125,41 @@
 
     (test-case "generate-param-hints: generates for multi-param"
       (let ((hints (generate-param-hints "my-add" '(1 2) '("x" "y")
-                                          "" 0)))
+                                          "(my-add 1 2)" 0)))
         (check (length hints) => 2)))
+
+    ;; --- handle-inlay-hint: integration ---
+    (test-case "handle-inlay-hint: returns hints for known function"
+      (let* ((uri "file:///test-ih.ss")
+             (text "(def (my-add x y) (+ x y))\n(my-add 1 2)")
+             (doc (make-document uri 1 text "gerbil"))
+             (forms (parse-source text))
+             (syms (extract-symbols forms)))
+        (set-document! uri doc)
+        (set-file-symbols! uri syms)
+        (let* ((params (hash ("textDocument" (hash ("uri" uri)))
+                             ("range" (hash ("start" (hash ("line" 0)
+                                                           ("character" 0)))
+                                            ("end" (hash ("line" 2)
+                                                         ("character" 0)))))))
+               (result (handle-inlay-hint params)))
+          (check (vector? result) => #t)
+          ;; Validate against LSP schema
+          (let ((violations (validate-response "textDocument/inlayHint" result)))
+            (check (null? violations) => #t)))
+        (remove-document! uri)
+        (remove-file-symbols! uri)))
+
+    (test-case "handle-inlay-hint: returns empty for missing document"
+      (let* ((params (hash ("textDocument" (hash ("uri" "file:///nonexistent.ss")))
+                           ("range" (hash ("start" (hash ("line" 0)
+                                                         ("character" 0)))
+                                          ("end" (hash ("line" 10)
+                                                       ("character" 0)))))))
+             (result (handle-inlay-hint params)))
+        ;; Handler may return empty vector or list for missing doc
+        (check (or (and (vector? result) (= (vector-length result) 0))
+                   (null? result)) => #t)))
   ))
 
 (def main

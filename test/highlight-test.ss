@@ -1,6 +1,11 @@
 ;;; -*- Gerbil -*-
 ;;; Tests for lsp/handlers/highlight
 (import :std/test
+        :lsp/lsp/state
+        :lsp/lsp/analysis/document
+        :lsp/lsp/analysis/parser
+        :lsp/lsp/analysis/symbols
+        :lsp/lsp/validation
         :lsp/lsp/handlers/highlight)
 
 (export highlight-test-suite)
@@ -79,6 +84,36 @@
           (lambda (col) (set! positions (cons col positions))))
         (check (length positions) => 1)
         (check (car positions) => 1)))
+
+    ;; --- handle-document-highlight: integration ---
+    (test-case "handle-document-highlight: finds highlights"
+      (let* ((uri "file:///test-hl.ss")
+             (text "(def (add a b) (+ a b))\n(add 1 2)")
+             (doc (make-document uri 1 text "gerbil"))
+             (forms (parse-source text))
+             (syms (extract-symbols forms)))
+        (set-document! uri doc)
+        (set-file-symbols! uri syms)
+        (let* ((params (hash ("textDocument" (hash ("uri" uri)))
+                             ("position" (hash ("line" 1) ("character" 1)))))
+               (result (handle-document-highlight params)))
+          (check (vector? result) => #t)
+          ;; "add" appears at definition and call
+          (check (>= (vector-length result) 1) => #t)
+          ;; Validate against LSP schema
+          (let ((violations (validate-response "textDocument/documentHighlight" result)))
+            (check (null? violations) => #t)))
+        (remove-document! uri)
+        (remove-file-symbols! uri)))
+
+    (test-case "handle-document-highlight: empty for missing document"
+      (let* ((params (hash ("textDocument" (hash ("uri" "file:///nonexistent.ss")))
+                           ("position" (hash ("line" 0) ("character" 0)))))
+             (result (handle-document-highlight params)))
+        ;; Handler may return empty vector or list for missing doc
+        (check (or (and (vector? result) (= (vector-length result) 0))
+                   (null? result)
+                   (void? result)) => #t)))
   ))
 
 (def main

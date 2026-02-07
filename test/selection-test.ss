@@ -2,7 +2,10 @@
 ;;; Tests for lsp/handlers/selection
 (import :std/test
         :lsp/lsp/util/position
+        :lsp/lsp/state
+        :lsp/lsp/analysis/document
         :lsp/lsp/analysis/parser
+        :lsp/lsp/validation
         :lsp/lsp/handlers/selection)
 
 (export selection-test-suite)
@@ -80,7 +83,40 @@
              (forms (parse-source text))
              (result (build-selection-range text forms 0 5)))
         (check (hash-table? result) => #t)
-        (check (hash-table? (hash-ref result "range" #f)) => #t)))
+        (let ((range (hash-ref result "range" #f)))
+          (check (hash-table? range) => #t)
+          ;; Verify the range start position is at line 0
+          (let ((start (hash-ref range "start" #f)))
+            (check (hash-table? start) => #t)
+            (check (hash-ref start "line") => 0)))))
+
+    ;; --- handle-selection-range: integration ---
+    (test-case "handle-selection-range: returns nested ranges"
+      (let* ((uri "file:///test-sel.ss")
+             (text "(def (foo x) x)")
+             (doc (make-document uri 1 text "gerbil")))
+        (set-document! uri doc)
+        (let* ((params (hash ("textDocument" (hash ("uri" uri)))
+                             ("positions" (vector (hash ("line" 0)
+                                                        ("character" 5))))))
+               (result (handle-selection-range params)))
+          (check (vector? result) => #t)
+          (check (> (vector-length result) 0) => #t)
+          (let ((first-range (vector-ref result 0)))
+            (check (hash-table? first-range) => #t)
+            (check (hash-table? (hash-ref first-range "range" #f)) => #t))
+          ;; Validate against LSP schema
+          (let ((violations (validate-response "textDocument/selectionRange" result)))
+            (check (null? violations) => #t)))
+        (remove-document! uri)))
+
+    (test-case "handle-selection-range: returns empty for missing document"
+      (let* ((params (hash ("textDocument" (hash ("uri" "file:///nonexistent.ss")))
+                           ("positions" (vector (hash ("line" 0)
+                                                      ("character" 0))))))
+             (result (handle-selection-range params)))
+        ;; Handler may return empty vector or list for missing doc
+        (check (or (vector? result) (list? result)) => #t)))
   ))
 
 (def main

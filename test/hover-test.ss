@@ -2,8 +2,11 @@
 ;;; Tests for lsp/handlers/hover
 (import :std/test
         :lsp/lsp/types
+        :lsp/lsp/state
+        :lsp/lsp/analysis/document
         :lsp/lsp/analysis/parser
         :lsp/lsp/analysis/symbols
+        :lsp/lsp/validation
         :lsp/lsp/handlers/hover)
 
 (export hover-test-suite)
@@ -62,6 +65,37 @@
     ;; --- find-symbol-info ---
     (test-case "find-symbol-info: returns #f for unknown symbol"
       (check (find-symbol-info "nonexistent" "file:///test.ss") => #f))
+
+    ;; --- handle-hover: integration ---
+    (test-case "handle-hover: returns hover for known symbol"
+      (let* ((uri "file:///test-hover.ss")
+             (text "(def (add a b) (+ a b))\n(add 1 2)")
+             (doc (make-document uri 1 text "gerbil"))
+             (forms (parse-source text))
+             (syms (extract-symbols forms)))
+        (set-document! uri doc)
+        (set-file-symbols! uri syms)
+        (let* ((params (hash ("textDocument" (hash ("uri" uri)))
+                             ("position" (hash ("line" 1) ("character" 1)))))
+               (result (handle-hover params)))
+          (when (and result (not (void? result)))
+            (check (hash-table? result) => #t)
+            (let ((contents (hash-ref result "contents" #f)))
+              (check (hash-table? contents) => #t)
+              ;; Contents should have markdown with function name
+              (let ((value (hash-ref contents "value" "")))
+                (check (string-contains-hover value "add") => #t)))
+            ;; Validate against LSP schema
+            (let ((violations (validate-response "textDocument/hover" result)))
+              (check (null? violations) => #t))))
+        (remove-document! uri)
+        (remove-file-symbols! uri)))
+
+    (test-case "handle-hover: returns void for missing document"
+      (let* ((params (hash ("textDocument" (hash ("uri" "file:///nonexistent.ss")))
+                           ("position" (hash ("line" 0) ("character" 0)))))
+             (result (handle-hover params)))
+        (check (void? result) => #t)))
   ))
 
 ;; Local helper for string-contains

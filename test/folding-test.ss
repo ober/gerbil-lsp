@@ -1,7 +1,10 @@
 ;;; -*- Gerbil -*-
 ;;; Tests for lsp/handlers/folding
 (import :std/test
+        :lsp/lsp/state
+        :lsp/lsp/analysis/document
         :lsp/lsp/analysis/parser
+        :lsp/lsp/validation
         :lsp/lsp/handlers/folding)
 
 (export folding-test-suite)
@@ -61,6 +64,33 @@
 
     (test-case "collect-folding-ranges: empty"
       (check-equal? (collect-folding-ranges '()) '()))
+
+    ;; --- handle-folding-range: integration ---
+    (test-case "handle-folding-range: returns ranges for multiline document"
+      (let* ((uri "file:///test-fold.ss")
+             (text "(def (foo x)\n  (+ x 1))\n(def y 42)")
+             (doc (make-document uri 1 text "gerbil")))
+        (set-document! uri doc)
+        (let* ((params (hash ("textDocument" (hash ("uri" uri)))))
+               (result (handle-folding-range params)))
+          (check (vector? result) => #t)
+          (check (>= (vector-length result) 1) => #t)
+          ;; Verify first range has correct start/end lines
+          (let ((first-range (vector-ref result 0)))
+            (check (hash-ref first-range "startLine") => 0)
+            (check (hash-ref first-range "endLine") => 1))
+          ;; Validate against LSP schema
+          (let ((violations (validate-response "textDocument/foldingRange" result)))
+            (check (null? violations) => #t)))
+        (remove-document! uri)))
+
+    (test-case "handle-folding-range: empty for missing document"
+      (let* ((params (hash ("textDocument" (hash ("uri" "file:///nonexistent.ss")))))
+             (result (handle-folding-range params)))
+        ;; Handler may return empty vector or list for missing doc
+        (check (or (and (vector? result) (= (vector-length result) 0))
+                   (null? result)
+                   (void? result)) => #t)))
   ))
 
 (def main

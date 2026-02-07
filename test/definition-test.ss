@@ -8,6 +8,7 @@
         :lsp/lsp/analysis/parser
         :lsp/lsp/analysis/symbols
         :lsp/lsp/analysis/completion-data
+        :lsp/lsp/validation
         :lsp/lsp/handlers/definition)
 
 (export definition-test-suite)
@@ -56,8 +57,11 @@
                              ("position" (hash ("line" 1) ("character" 1)))))
                (result (handle-definition params)))
           (check (not (void? result)) => #t)
-          (when (hash-table? result)
-            (check-equal? (hash-ref result "uri") uri)))
+          (check (hash-table? result) => #t)
+          (check-equal? (hash-ref result "uri") uri)
+          ;; Validate against LSP schema
+          (let ((violations (validate-response "textDocument/definition" result)))
+            (check (null? violations) => #t)))
         ;; Cleanup
         (remove-document! uri)
         (remove-file-symbols! uri)))

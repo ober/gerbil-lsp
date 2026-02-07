@@ -1,6 +1,9 @@
 ;;; -*- Gerbil -*-
 ;;; Tests for lsp/handlers/formatting
 (import :std/test
+        :lsp/lsp/state
+        :lsp/lsp/analysis/document
+        :lsp/lsp/validation
         :lsp/lsp/handlers/formatting)
 
 (export formatting-test-suite)
@@ -95,16 +98,46 @@
 
     (test-case "format-gerbil-source: preserves blank lines"
       (let ((result (format-gerbil-source "(def x 1)\n\n(def y 2)")))
-        (check (string? result) => #t)))
+        (check (string? result) => #t)
+        ;; The blank line between forms should be preserved
+        (check (and (string-contains-format result "\n\n") #t) => #t)))
 
     (test-case "format-gerbil-source: formats code"
       (let ((result (format-gerbil-source "(def   x   1)")))
-        (check (string? result) => #t)))
+        (check (string? result) => #t)
+        ;; Extra whitespace should be removed
+        (check (not (string-contains-format result "   x   ")) => #t)))
 
     (test-case "format-gerbil-source: inline comments preserved"
       (let ((result (format-gerbil-source "(def x 1) ; inline\n(def y 2)")))
         (check (string? result) => #t)
         (check (and (string-contains-format result "; inline") #t) => #t)))
+
+    ;; --- handle-formatting: integration ---
+    (test-case "handle-formatting: returns text edits for open document"
+      (let* ((uri "file:///test-format.ss")
+             (text "(def   x   1)\n(def y 2)")
+             (doc (make-document uri 1 text "gerbil")))
+        (set-document! uri doc)
+        (let* ((params (hash ("textDocument" (hash ("uri" uri)))
+                             ("options" (hash ("tabSize" 2)
+                                              ("insertSpaces" #t)))))
+               (result (handle-formatting params)))
+          (check (vector? result) => #t)
+          ;; Validate against LSP schema
+          (let ((violations (validate-response "textDocument/formatting" result)))
+            (check (null? violations) => #t)))
+        (remove-document! uri)))
+
+    (test-case "handle-formatting: returns empty for missing document"
+      (let* ((params (hash ("textDocument" (hash ("uri" "file:///nonexistent.ss")))
+                           ("options" (hash ("tabSize" 2)
+                                            ("insertSpaces" #t)))))
+             (result (handle-formatting params)))
+        ;; Handler may return empty vector or list for missing doc
+        (check (or (and (vector? result) (= (vector-length result) 0))
+                   (null? result)
+                   (void? result)) => #t)))
   ))
 
 ;; Local helper for string-contains

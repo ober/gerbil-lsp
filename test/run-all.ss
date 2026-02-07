@@ -40,7 +40,24 @@
     "test/links-test.ss"
     "test/index-test.ss"
     "test/semantic-tokens-test.ss"
-    "test/inlay-hints-test.ss"))
+    "test/inlay-hints-test.ss"
+    ;; Infrastructure tests
+    "test/validation-test.ss"
+    "test/cache-test.ss"
+    "test/project-config-test.ss"
+    ;; Handler tests (Phase 4)
+    "test/lifecycle-test.ss"
+    "test/configuration-test.ss"
+    "test/pull-diagnostics-test.ss"
+    "test/code-action-test.ss"
+    "test/call-hierarchy-test.ss"
+    "test/type-hierarchy-test.ss"
+    "test/type-definition-test.ss"
+    "test/implementation-test.ss"
+    "test/code-lens-test.ss"
+    "test/on-type-formatting-test.ss"
+    "test/execute-command-test.ss"
+    "test/will-rename-test.ss"))
 
 (def (run-all-tests)
   (let ((failed '())

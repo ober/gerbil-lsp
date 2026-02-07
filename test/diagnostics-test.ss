@@ -66,7 +66,12 @@
 
     (test-case "parse-diagnostics: malformed source has diagnostics"
       (let ((diags (parse-diagnostics "(def x")))
-        (check (>= (length diags) 1) => #t)))
+        (check (>= (length diags) 1) => #t)
+        ;; Each diagnostic should have a non-empty message
+        (let ((first-diag (car diags)))
+          (check (hash-table? first-diag) => #t)
+          (let ((msg (hash-ref first-diag "message" "")))
+            (check (> (string-length msg) 0) => #t)))))
 
     ;; --- error-message ---
     (test-case "error-message: error returns string"

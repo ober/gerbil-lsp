@@ -2,8 +2,12 @@
 ;;; Tests for lsp/analysis/symbols
 (import :std/test
         :lsp/lsp/types
+        :lsp/lsp/state
+        :lsp/lsp/analysis/document
         :lsp/lsp/analysis/parser
-        :lsp/lsp/analysis/symbols)
+        :lsp/lsp/analysis/symbols
+        :lsp/lsp/validation
+        :lsp/lsp/handlers/symbols)
 
 (export symbols-test-suite)
 
@@ -210,6 +214,46 @@
 
     (test-case "extract-local-bindings: empty body"
       (check-equal? (extract-local-bindings '()) '()))
+
+    ;; --- handle-document-symbol: integration ---
+    (test-case "handle-document-symbol: returns symbols for open document"
+      (let* ((uri "file:///test-dsym.ss")
+             (text "(def (add a b) (+ a b))\n(def x 42)")
+             (doc (make-document uri 1 text "gerbil"))
+             (forms (parse-source text))
+             (syms (extract-symbols forms)))
+        (set-document! uri doc)
+        (set-file-symbols! uri syms)
+        (let* ((params (hash ("textDocument" (hash ("uri" uri)))))
+               (result (handle-document-symbol params)))
+          (check (vector? result) => #t)
+          (check (>= (vector-length result) 2) => #t)
+          ;; Each symbol should have name and kind
+          (let ((first-sym (vector-ref result 0)))
+            (check (string? (hash-ref first-sym "name")) => #t)
+            (check (integer? (hash-ref first-sym "kind")) => #t))
+          ;; Validate against LSP schema
+          (let ((violations (validate-response "textDocument/documentSymbol" result)))
+            (check (null? violations) => #t)))
+        (remove-document! uri)
+        (remove-file-symbols! uri)))
+
+    ;; --- handle-workspace-symbol: integration ---
+    (test-case "handle-workspace-symbol: filters by query"
+      (let* ((uri "file:///test-wsym.ss")
+             (syms (list (make-sym-info "add" SymbolKind.Function 0 0 0 10
+                                         "(add a b)")
+                         (make-sym-info "x" SymbolKind.Variable 1 0 1 5 #f))))
+        (set-file-symbols! uri syms)
+        (let* ((params (hash ("query" "ad")))
+               (result (handle-workspace-symbol params)))
+          (check (vector? result) => #t)
+          ;; Should find "add" matching "ad" query
+          (check (>= (vector-length result) 1) => #t)
+          ;; Validate against LSP schema
+          (let ((violations (validate-response "workspace/symbol" result)))
+            (check (null? violations) => #t)))
+        (remove-file-symbols! uri)))
   ))
 
 (def main

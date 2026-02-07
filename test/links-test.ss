@@ -1,7 +1,10 @@
 ;;; -*- Gerbil -*-
 ;;; Tests for lsp/handlers/links
 (import :std/test
+        :lsp/lsp/state
+        :lsp/lsp/analysis/document
         :lsp/lsp/analysis/parser
+        :lsp/lsp/validation
         :lsp/lsp/handlers/links)
 
 (export links-test-suite)
@@ -43,6 +46,30 @@
     (test-case "make-import-link: relative import unresolvable"
       ;; Relative import to non-existing file
       (check (make-import-link './nonexistent "/tmp/test.ss" 1) => #f))
+
+    ;; --- handle-document-link: integration ---
+    (test-case "handle-document-link: returns vector for open document"
+      (let* ((uri "file:///test-links.ss")
+             (text "(def x 1)")
+             (doc (make-document uri 1 text "gerbil")))
+        (set-document! uri doc)
+        (let* ((params (hash ("textDocument" (hash ("uri" uri)))))
+               (result (handle-document-link params)))
+          (check (vector? result) => #t)
+          ;; No imports → empty vector
+          (check (vector-length result) => 0)
+          ;; Validate against LSP schema
+          (let ((violations (validate-response "textDocument/documentLink" result)))
+            (check (null? violations) => #t)))
+        (remove-document! uri)))
+
+    (test-case "handle-document-link: returns empty for missing document"
+      (let* ((params (hash ("textDocument" (hash ("uri" "file:///nonexistent.ss")))))
+             (result (handle-document-link params)))
+        ;; Handler may return empty vector or list for missing doc
+        (check (or (and (vector? result) (= (vector-length result) 0))
+                   (null? result)
+                   (void? result)) => #t)))
   ))
 
 (def main

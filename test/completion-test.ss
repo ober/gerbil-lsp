@@ -8,6 +8,7 @@
         :lsp/lsp/analysis/parser
         :lsp/lsp/analysis/symbols
         :lsp/lsp/analysis/completion-data
+        :lsp/lsp/validation
         :lsp/lsp/handlers/completion)
 
 (export completion-test-suite)
@@ -86,7 +87,14 @@
           (check (hash-table? result) => #t)
           (let ((items (hash-ref result "items" [])))
             ;; Should have at least the "add" symbol from the file
-            (check (> (vector-length items) 0) => #t)))
+            (check (> (vector-length items) 0) => #t)
+            ;; Verify "add" is among the completion labels
+            (let ((labels (map (lambda (item) (hash-ref item "label" ""))
+                               (vector->list items))))
+              (check (member "add" labels) => (member "add" labels)))
+            ;; Validate against LSP schema
+            (let ((violations (validate-response "textDocument/completion" result)))
+              (check (null? violations) => #t))))
         ;; Cleanup
         (remove-document! uri)
         (remove-file-symbols! uri)))

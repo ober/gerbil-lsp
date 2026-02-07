@@ -1,6 +1,9 @@
 ;;; -*- Gerbil -*-
 ;;; Tests for lsp/handlers/semantic-tokens
 (import :std/test
+        :lsp/lsp/state
+        :lsp/lsp/analysis/document
+        :lsp/lsp/validation
         :lsp/lsp/handlers/semantic-tokens)
 
 (export semantic-tokens-test-suite)
@@ -71,8 +74,12 @@
 
     (test-case "tokenize-source: simple def"
       (let ((tokens (tokenize-source "(def x 1)")))
-        ;; Should have at least: def (keyword), x (variable), 1 (number)
-        (check (>= (length tokens) 3) => #t)))
+        ;; Should have exactly 3 tokens: def (keyword), x (variable), 1 (number)
+        (check (= (length tokens) 3) => #t)
+        ;; Verify token types
+        (check (cadddr (car tokens)) => SemanticTokenType.keyword)
+        (check (cadddr (cadr tokens)) => SemanticTokenType.variable)
+        (check (cadddr (caddr tokens)) => SemanticTokenType.number)))
 
     (test-case "tokenize-source: comment"
       (let ((tokens (tokenize-source "; a comment")))
@@ -94,8 +101,8 @@
 
     (test-case "tokenize-source: multiline"
       (let ((tokens (tokenize-source "(def x 1)\n(def y 2)")))
-        ;; Should have tokens on both lines
-        (check (>= (length tokens) 4) => #t)))
+        ;; Should have 6 tokens: 3 per line
+        (check (= (length tokens) 6) => #t)))
 
     ;; --- encode-semantic-tokens ---
     (test-case "encode-semantic-tokens: empty"
@@ -167,6 +174,34 @@
 
     (test-case "symbol-start-char?: digit"
       (check (symbol-start-char? #\0) => #f))
+
+    ;; --- handle-semantic-tokens-full: integration ---
+    (test-case "handle-semantic-tokens-full: returns encoded tokens"
+      (let* ((uri "file:///test-tokens.ss")
+             (text "(def x 1)\n(def y 2)")
+             (doc (make-document uri 1 text "gerbil")))
+        (set-document! uri doc)
+        (let* ((params (hash ("textDocument" (hash ("uri" uri)))))
+               (result (handle-semantic-tokens-full params)))
+          (check (hash-table? result) => #t)
+          (let ((data (hash-ref result "data" #f)))
+            (check (vector? data) => #t)
+            ;; Length must be divisible by 5 (each token = 5 ints)
+            (check (= (modulo (vector-length data) 5) 0) => #t)
+            (check (> (vector-length data) 0) => #t))
+          ;; Validate against LSP schema
+          (let ((violations (validate-response "textDocument/semanticTokens/full" result)))
+            (check (null? violations) => #t)))
+        (remove-document! uri)))
+
+    (test-case "handle-semantic-tokens-full: empty for missing document"
+      (let* ((params (hash ("textDocument" (hash ("uri" "file:///nonexistent.ss")))))
+             (result (handle-semantic-tokens-full params)))
+        ;; Should return a hash with empty data
+        (check (hash-table? result) => #t)
+        (let ((data (hash-ref result "data" [])))
+          (check (or (and (vector? data) (= (vector-length data) 0))
+                     (null? data)) => #t))))
   ))
 
 (def main
