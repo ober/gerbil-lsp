@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; gerbil-lsp entry point
-(import :std/cli/getopt
-        :std/sugar
+(import ./compat/compat
         ./util/log
         ./server
         ./validation
@@ -51,10 +50,12 @@
 
 (def (gerbil-lsp-main opt)
   (when (hash-ref opt 'version #f)
-    (displayln "gerbil-lsp 0.1.0")
+    (displayln (string-append "gerbil-lsp 0.1.0 (Gerbil " (gerbil-version-string) ")"))
     (exit 0))
   ;; Set log level
   (set-log-level! (log-level-from-string (hash-ref opt 'log-level "info")))
+  ;; Log Gerbil version at startup
+  (lsp-info (string-append "gerbil-lsp starting (Gerbil " (gerbil-version-string) ")"))
   ;; Enable validation if requested
   (when (hash-ref opt 'validate #f)
     (enable-validation!))

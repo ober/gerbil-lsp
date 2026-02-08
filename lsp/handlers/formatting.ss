@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Document formatting handler
-(import :std/sugar
-        ../util/log
+(import ../util/log
         ../util/position
         ../util/string
         ../types

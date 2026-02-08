@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; JSON-RPC 2.0 message handling for LSP
 (import :std/text/json
-        :std/sugar
         ./util/log)
 (export #t)
 

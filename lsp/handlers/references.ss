@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Find references handler
-(import :std/sugar
-        ../util/log
+(import ../util/log
         ../util/position
         ../types
         ../state

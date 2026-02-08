@@ -1,9 +1,8 @@
 ;;; -*- Gerbil -*-
 ;;; Project configuration handling
 ;;; Reads settings from gerbil.pkg and .gerbil-lsp.json
-(import :std/sugar
-        :std/text/json
-        :std/misc/ports
+(import :std/text/json
+        ../compat/compat
         ../util/log
         ../state)
 (export #t)

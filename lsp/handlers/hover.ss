@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Hover handler — show symbol info on hover
-(import :std/format
-        :std/sugar
+(import ../compat/compat
         ../util/log
         ../util/position
         ../types

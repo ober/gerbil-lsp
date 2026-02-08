@@ -1,9 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Diagnostics handler — compile Gerbil files and report errors
-(import :std/format
-        :std/sugar
-        :std/misc/ports
-        :std/misc/string
+(import ../compat/compat
         ../util/log
         ../util/position
         ../util/string

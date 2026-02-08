@@ -1,8 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; LSP stdio transport — Content-Length framing over stdin/stdout
 (import :std/text/json
-        :std/misc/string
-        :std/format
+        ./compat/compat
         ./util/log)
 (export #t)
 

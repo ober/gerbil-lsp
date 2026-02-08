@@ -1,8 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; Go to implementation handler — textDocument/implementation
 ;;; When cursor is on a method name, finds all defmethod entries
-(import :std/sugar
-        ../util/log
+(import ../util/log
         ../util/position
         ../types
         ../state

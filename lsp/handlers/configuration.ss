@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Configuration handler — workspace/didChangeConfiguration
-(import :std/sugar
-        ../util/log
+(import ../util/log
         ../state)
 (export #t)
 

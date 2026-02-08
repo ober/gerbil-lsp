@@ -1,9 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Workspace-wide symbol index
-(import :std/iter
-        :std/format
-        :std/sugar
-        :std/misc/ports
+(import ../compat/compat
         ../util/log
         ../util/position
         ../util/string

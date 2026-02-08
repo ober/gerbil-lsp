@@ -1,8 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Document symbol and workspace symbol handlers
-(import :std/sugar
-        :std/iter
-        ../util/log
+(import ../util/log
         ../util/position
         ../util/string
         ../types

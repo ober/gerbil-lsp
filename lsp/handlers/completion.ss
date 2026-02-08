@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Completion handler
-(import :std/format
-        :std/sugar
+(import ../compat/compat
         ../util/log
         ../util/position
         ../util/string

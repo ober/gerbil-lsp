@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Signature help handler — show function signatures
-(import :std/format
-        :std/sugar
+(import ../compat/compat
         ../util/log
         ../util/position
         ../types

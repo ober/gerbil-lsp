@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Document highlight handler — textDocument/documentHighlight
-(import :std/sugar
-        ../util/log
+(import ../util/log
         ../util/position
         ../util/string
         ../types

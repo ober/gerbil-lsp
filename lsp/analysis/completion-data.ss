@@ -1,8 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Completion candidate generation
-(import :std/iter
-        :std/sugar
-        ../types
+(import ../types
         ../util/log
         ../state
         ./symbols
@@ -14,15 +12,16 @@
 (def *gerbil-keywords*
   '("def" "define" "defn" "def*"
     "defstruct" "defclass" "defmethod" "defproto"
-    "defrule" "defrules" "defsyntax"
+    "defrule" "defrules" "defsyntax" "defsyntax-case"
     "defvalues" "defconst"
     "deferror-class"
+    "deftable" "definterface" "implement"
     "lambda" "let" "let*" "letrec" "letrec*"
     "let-values" "let*-values"
     "if" "cond" "case" "when" "unless"
     "and" "or" "not"
     "begin" "begin0"
-    "do" "do-while"
+    "do" "do-while" "do-with-lock"
     "for" "for*" "for/collect" "for/fold"
     "while"
     "set!" "set!-values"
@@ -35,7 +34,7 @@
     "include"
     "quote" "quasiquote" "unquote" "unquote-splicing"
     "syntax" "syntax-rules" "syntax-case"
-    "match" "with"
+    "match" "with" "one-of"
     "try" "catch" "finally"
     "assert"
     "parameterize"
@@ -228,7 +227,21 @@
     ("stable-sort" ":std/sort") ("stable-sort!" ":std/sort")
     ;; :std/format
     ("format" ":std/format") ("fprintf" ":std/format")
-    ("printf" ":std/format")))
+    ("printf" ":std/format")
+    ;; v0.19 relocated modules
+    ("list-sort" ":std/list/list") ("list-sort!" ":std/list/list")
+    ("object-class" ":gerbil/runtime/mop")
+    ;; v0.19 sync modules
+    ("channel-put" ":std/sync/channel") ("channel-get" ":std/sync/channel")
+    ("make-channel" ":std/sync/channel")
+    ("make-completion" ":std/sync/completion")
+    ("completion-post!" ":std/sync/completion")
+    ("completion-wait!" ":std/sync/completion")
+    ;; v0.19 string/path module
+    ("path-simplify" ":std/string/path") ("path-parent" ":std/string/path")
+    ;; v0.19 iterator forms
+    ("in-range-inclusive" ":std/iter") ("in-integers" ":std/iter")
+    ("in-number-series" ":std/iter")))
 
 ;;; Characters that can appear in completion prefixes
 (def (completion-char? c)
@@ -250,7 +263,10 @@
     ("cond" "(cond\n  (${1:test} ${2:expr})\n  (else ${0:default}))" "Conditional")
     ("lambda" "(lambda (${1:args})\n  ${0:body})" "Lambda expression")
     ("import" "(import ${0:module})" "Import module")
-    ("export" "(export #t)" "Export all")))
+    ("export" "(export #t)" "Export all")
+    ("definterface" "(definterface ${1:Name}\n  (${2:method} (${3:args})))" "Define an interface (v0.19)")
+    ("implement" "(implement ${1:ClassName} ${2:InterfaceName}\n  (def (${3:method} self ${4:args})\n    ${0:body}))" "Implement interface (v0.19)")
+    ("defsyntax-case" "(defsyntax-case (${1:name} stx)\n  ((_ ${2:pattern})\n   ${0:body}))" "Define syntax-case macro (v0.19)")))
 
 ;;; Get snippet completions matching a prefix
 (def (snippet-completions prefix)

@@ -1,9 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; Code action handler — textDocument/codeAction
 ;;; Provides organize imports and add missing import actions
-(import :std/format
-        :std/sugar
-        :std/sort
+(import ../compat/compat
         ../util/log
         ../util/position
         ../util/string

@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Go-to-definition handler
-(import :std/sugar
-        ../util/log
+(import ../util/log
         ../util/position
         ../types
         ../state

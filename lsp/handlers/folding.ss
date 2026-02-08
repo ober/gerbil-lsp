@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Folding range handler — textDocument/foldingRange
-(import :std/sugar
-        ../util/log
+(import ../util/log
         ../util/position
         ../state
         ../analysis/document

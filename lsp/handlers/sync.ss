@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Document synchronization handlers: didOpen, didChange, didClose, didSave, watchedFiles
-(import :std/sugar
-        ../util/log
+(import ../util/log
         ../state
         ../server
         ../analysis/document

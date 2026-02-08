@@ -1,9 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Module resolution — resolve import specs to file paths and exports
-(import :std/sugar
-        :std/iter
-        :std/misc/ports
-        :std/misc/path
+(import ../compat/compat
         ../util/log
         ../state
         ./parser
@@ -55,12 +52,43 @@
           (if (file-exists? alt) alt #f))))))
 
 ;;; Resolve a standard library or package module
+;;; Module path aliases for v0.18 <-> v0.19 path migration
+;;; Tried as fallback when the original module path is not found
+(def *module-path-aliases*
+  '(("std/misc/list" . "std/list/list")
+    ("std/misc/path" . "std/string/path")
+    ("std/misc/channel" . "std/sync/channel")
+    ("std/misc/completion" . "std/sync/completion")
+    ("std/misc/barrier" . "std/sync/barrier")
+    ("std/misc/rwlock" . "std/sync/rwlock")
+    ("std/misc/list-builder" . "std/list/list-builder")
+    ("std/misc/plist" . "std/list/plist")
+    ("std/misc/alist" . "std/list/alist")
+    ("std/misc/queue" . "std/struct/queue")
+    ;; reverse aliases (v0.19 -> v0.18)
+    ("std/list/list" . "std/misc/list")
+    ("std/string/path" . "std/misc/path")
+    ("std/sync/channel" . "std/misc/channel")
+    ("std/sync/completion" . "std/misc/completion")
+    ("std/sync/barrier" . "std/misc/barrier")
+    ("std/sync/rwlock" . "std/misc/rwlock")
+    ("std/list/list-builder" . "std/misc/list-builder")
+    ("std/list/plist" . "std/misc/plist")
+    ("std/list/alist" . "std/misc/alist")
+    ("std/struct/queue" . "std/misc/queue")))
+
+;;; Look up an alias for a module path
+(def (module-path-alias clean)
+  (let ((entry (assoc clean *module-path-aliases*)))
+    (and entry (cdr entry))))
+
 ;;; Returns the source path if available, #f otherwise
 ;;; Search order:
 ;;;   1. $GERBIL_HOME/src/
 ;;;   2. ~/.gerbil/pkg/
 ;;;   3. $WORKSPACE/.gerbil/lib/ (project-local)
 ;;;   4. $GERBIL_LOADPATH directories
+;;;   5. Try alias (v0.18 <-> v0.19 path mapping) and repeat
 (def (resolve-std-module module-str)
   (let* ((clean (if (string-prefix? ":" module-str)
                   (substring module-str 1 (string-length module-str))
@@ -77,7 +105,18 @@
           pkg-path
           ;; Try workspace-local .gerbil/lib
           (or (resolve-in-workspace-lib clean)
-              (resolve-in-loadpath clean)))))))
+              (resolve-in-loadpath clean)
+              ;; Try v0.18 <-> v0.19 alias
+              (let ((alias (module-path-alias clean)))
+                (and alias
+                     (let ((alias-src (string-append gerbil-home "/src/" alias ".ss")))
+                       (if (file-exists? alias-src)
+                         alias-src
+                         (let ((alias-pkg (string-append (getenv "HOME" "") "/.gerbil/pkg/" alias ".ss")))
+                           (if (file-exists? alias-pkg)
+                             alias-pkg
+                             (or (resolve-in-workspace-lib alias)
+                                 (resolve-in-loadpath alias))))))))))))))
 
 ;;; Try to resolve a module in the workspace-local .gerbil/lib directory
 (def (resolve-in-workspace-lib clean)

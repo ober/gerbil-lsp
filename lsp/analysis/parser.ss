@@ -1,9 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; S-expression parser for Gerbil source
 ;;; Parses source text into a list of top-level forms with position info
-(import :std/sugar
-        :std/iter
-        ../util/log)
+(import ../util/log)
 (export #t)
 
 ;;; A parsed form with source location
@@ -94,6 +92,7 @@
              '(def define defn def*
                defstruct defclass
                defmethod defproto
-               defrule defrules defsyntax defsyntax-call
+               defrule defrules defsyntax defsyntax-call defsyntax-case
                defvalues defconst
-               deferror-class))))
+               deferror-class
+               deftable definterface implement))))

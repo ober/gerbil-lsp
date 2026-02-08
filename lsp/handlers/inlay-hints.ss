@@ -1,8 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; Inlay hints handler — textDocument/inlayHint
 ;;; Shows parameter names at function call sites
-(import :std/format
-        :std/sugar
+(import ../compat/compat
         ../util/log
         ../util/position
         ../types

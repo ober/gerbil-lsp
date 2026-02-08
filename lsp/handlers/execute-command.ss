@@ -1,9 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; workspace/executeCommand handler
 ;;; Dispatches code lens commands: run test, show references
-(import :std/format
-        :std/sugar
-        :std/misc/ports
+(import ../compat/compat
         ../util/log
         ../util/position
         ../types

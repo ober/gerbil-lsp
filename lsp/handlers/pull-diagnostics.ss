@@ -1,8 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; Pull diagnostics handler — textDocument/diagnostic
 ;;; Returns DocumentDiagnosticReport
-(import :std/sugar
-        ../util/log
+(import ../util/log
         ../types
         ../state
         ../analysis/document

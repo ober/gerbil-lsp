@@ -1,12 +1,8 @@
 ;;; -*- Gerbil -*-
 ;;; Persistent symbol index cache
 ;;; Stores symbol index to disk for fast startup and incremental updates
-(import :std/sugar
-        :std/text/json
-        :std/iter
-        :std/format
-        :std/misc/ports
-        :std/misc/path
+(import :std/text/json
+        ../compat/compat
         ../util/log
         ../state
         ./symbols)

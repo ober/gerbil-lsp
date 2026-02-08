@@ -2,8 +2,23 @@
 ;;; -*- Gerbil -*-
 (import :std/build-script)
 
+;;; Detect Gerbil version and select the appropriate compat shim
+(let* ((vs (gerbil-version-string))
+       (parts (string-split vs #\.))
+       (minor (string->number (cadr parts)))
+       (src (if (>= minor 19)
+              "lsp/compat/compat-v19.ss"
+              "lsp/compat/compat-v18.ss"))
+       (dst "lsp/compat/compat.ss"))
+  (displayln "gerbil-lsp build: detected Gerbil v0." minor
+             " — using " src)
+  (when (file-exists? dst) (delete-file dst))
+  (copy-file src dst))
+
 (defbuild-script
-  '("lsp/util/log"
+  '("lsp/compat/version"
+    "lsp/compat/compat"
+    "lsp/util/log"
     "lsp/util/position"
     "lsp/util/string"
     "lsp/transport"

@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Type hierarchy handlers — prepareTypeHierarchy, supertypes, subtypes
-(import :std/sugar
-        :std/misc/string
+(import ../compat/compat
         ../util/log
         ../util/position
         ../util/string

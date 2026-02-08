@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Call hierarchy handlers — prepareCallHierarchy, incomingCalls, outgoingCalls
-(import :std/format
-        :std/sugar
+(import ../compat/compat
         ../util/log
         ../util/position
         ../util/string

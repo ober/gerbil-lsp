@@ -1,8 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; LSP server logging — all output goes to stderr
 ;;; stdout is reserved exclusively for LSP transport
-(import :std/format
-        :std/sugar)
+(import ../compat/compat)
 (export #t)
 
 (def *log-level* 1) ; 0=debug 1=info 2=warn 3=error

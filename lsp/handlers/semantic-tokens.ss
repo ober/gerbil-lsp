@@ -1,8 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; Semantic tokens handler — textDocument/semanticTokens/full
 ;;; Provides token classification for syntax highlighting
-(import :std/sugar
-        :std/sort
+(import ../compat/compat
         ../util/log
         ../util/position
         ../util/string
@@ -42,14 +41,15 @@
     (for-each (lambda (kw) (hash-put! ht kw #t))
       '("def" "define" "defn" "def*"
         "defstruct" "defclass" "defmethod" "defproto"
-        "defrule" "defrules" "defsyntax" "defsyntax-call"
+        "defrule" "defrules" "defsyntax" "defsyntax-call" "defsyntax-case"
         "defvalues" "defconst" "deferror-class"
+        "deftable" "definterface" "implement"
         "lambda" "let" "let*" "letrec" "letrec*"
         "let-values" "let*-values"
         "if" "cond" "case" "when" "unless"
         "and" "or" "not"
         "begin" "begin0"
-        "do" "do-while" "while"
+        "do" "do-while" "while" "do-with-lock"
         "for" "for*" "for/collect" "for/fold"
         "set!" "set!-values"
         "values" "receive" "call-with-values"
@@ -60,7 +60,7 @@
         "require" "provide" "include"
         "quote" "quasiquote" "unquote" "unquote-splicing"
         "syntax" "syntax-rules" "syntax-case"
-        "match" "with"
+        "match" "with" "one-of"
         "try" "catch" "finally"
         "assert" "parameterize" "dynamic-wind" "guard"
         "delay" "force" "declare" "using" "with-methods"))
@@ -70,14 +70,14 @@
 (def *macro-def-forms*
   (let ((ht (make-hash-table)))
     (for-each (lambda (kw) (hash-put! ht kw #t))
-      '("defrule" "defrules" "defsyntax" "defsyntax-call"))
+      '("defrule" "defrules" "defsyntax" "defsyntax-call" "defsyntax-case"))
     ht))
 
 ;;; Gerbil type-defining forms
 (def *type-def-forms*
   (let ((ht (make-hash-table)))
     (for-each (lambda (kw) (hash-put! ht kw #t))
-      '("defstruct" "defclass" "deferror-class"))
+      '("defstruct" "defclass" "deferror-class" "deftable" "definterface"))
     ht))
 
 ;;; Handle textDocument/semanticTokens/full

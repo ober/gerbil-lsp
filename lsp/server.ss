@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; LSP server main dispatch loop
-(import :std/format
-        :std/sugar
+(import ./compat/compat
         :std/text/json
         ./util/log
         ./transport

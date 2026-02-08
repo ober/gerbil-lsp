@@ -1,8 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; Code lens handler — textDocument/codeLens
 ;;; Shows reference counts and test runners
-(import :std/format
-        :std/sugar
+(import ../compat/compat
         ../util/log
         ../util/position
         ../types

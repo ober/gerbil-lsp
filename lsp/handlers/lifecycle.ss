@@ -1,8 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; LSP lifecycle handlers: initialize, initialized, shutdown, exit
-(import :std/sugar
-        :std/format
-        :std/iter
+(import ../compat/compat
         ../util/log
         ../jsonrpc
         ../types

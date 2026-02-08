@@ -1,8 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; On-type formatting handler — textDocument/onTypeFormatting
 ;;; Triggered on ), ], and newline to auto-indent
-(import :std/sugar
-        ../util/log
+(import ../util/log
         ../util/position
         ../types
         ../state

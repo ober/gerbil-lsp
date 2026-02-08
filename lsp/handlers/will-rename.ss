@@ -1,8 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; Will-rename handler — workspace/willRenameFiles
 ;;; Updates import paths when .ss files are renamed
-(import :std/format
-        :std/sugar
+(import ../compat/compat
         ../util/log
         ../util/position
         ../util/string

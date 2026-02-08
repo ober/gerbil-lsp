@@ -1,9 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; LSP protocol response validation
 ;;; Validates outgoing messages against LSP spec schemas in debug mode.
-(import :std/sugar
-        :std/format
-        :std/iter
+(import ./compat/compat
         ./util/log
         ./types)
 (export #t)

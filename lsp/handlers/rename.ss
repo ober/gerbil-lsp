@@ -2,8 +2,7 @@
 ;;; Rename handler — rename symbols across the workspace
 ;;; Supports scope-aware rename (local variables stay within their form)
 ;;; and skips matches inside strings and comments.
-(import :std/sugar
-        ../util/log
+(import ../util/log
         ../util/position
         ../util/string
         ../types

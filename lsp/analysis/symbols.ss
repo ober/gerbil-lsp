@@ -1,8 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Symbol extraction from parsed Gerbil source forms
-(import :std/format
-        :std/iter
-        :std/sugar
+(import ../compat/compat
         ../types
         ../util/log
         ./parser)
@@ -45,8 +43,8 @@
         ;; (defmethod {name type} ...)
         ((eq? head 'defmethod)
          (extract-defmethod-symbol form line col end-line end-col))
-        ;; (defrule/defrules/defsyntax name ...)
-        ((memq head '(defrule defrules defsyntax defsyntax-call))
+        ;; (defrule/defrules/defsyntax/defsyntax-case name ...)
+        ((memq head '(defrule defrules defsyntax defsyntax-call defsyntax-case))
          (extract-macro-symbol form line col end-line end-col))
         ;; (defvalues (name ...) expr)
         ((eq? head 'defvalues)
@@ -57,6 +55,15 @@
         ;; (deferror-class name ...)
         ((eq? head 'deferror-class)
          (extract-error-class-symbol form line col end-line end-col))
+        ;; v0.19: (deftable name ...)
+        ((eq? head 'deftable)
+         (extract-deftable-symbol form line col end-line end-col))
+        ;; v0.19: (definterface name (method ...) ...)
+        ((eq? head 'definterface)
+         (extract-definterface-symbol form line col end-line end-col))
+        ;; v0.19: (implement ClassName InterfaceName ...)
+        ((eq? head 'implement)
+         (extract-implement-symbol form line col end-line end-col))
         (else '())))))
 
 ;;; Extract from (def name expr) or (def (name . args) body...)
@@ -211,6 +218,40 @@
         (list (make-sym-info (symbol->string name)
                              SymbolKind.Class line col end-line end-col
                              "error class"))
+        '()))))
+
+;;; v0.19: Extract from (deftable name ...)
+(def (extract-deftable-symbol form line col end-line end-col)
+  (if (< (length form) 2) '()
+    (let ((name (cadr form)))
+      (if (symbol? name)
+        (list (make-sym-info (symbol->string name)
+                             SymbolKind.Struct line col end-line end-col
+                             "table type"))
+        '()))))
+
+;;; v0.19: Extract from (definterface name (method ...) ...)
+(def (extract-definterface-symbol form line col end-line end-col)
+  (if (< (length form) 2) '()
+    (let ((name (cadr form)))
+      (if (symbol? name)
+        (list (make-sym-info (symbol->string name)
+                             SymbolKind.Interface line col end-line end-col
+                             "interface"))
+        '()))))
+
+;;; v0.19: Extract from (implement ClassName InterfaceName ...)
+(def (extract-implement-symbol form line col end-line end-col)
+  (if (< (length form) 3) '()
+    (let ((class-name (cadr form))
+          (iface-name (caddr form)))
+      (if (and (symbol? class-name) (symbol? iface-name))
+        (list (make-sym-info
+                (string-append (symbol->string class-name)
+                               " implements "
+                               (symbol->string iface-name))
+                SymbolKind.Method line col end-line end-col
+                "implementation"))
         '()))))
 
 ;;; Extract import specs from located forms

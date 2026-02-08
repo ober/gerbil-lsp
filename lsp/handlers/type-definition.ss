@@ -1,8 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; Type definition handler — textDocument/typeDefinition
 ;;; Uses heuristics to navigate from constructors/predicates/accessors to their type
-(import :std/sugar
-        ../util/log
+(import ../util/log
         ../util/position
         ../util/string
         ../types

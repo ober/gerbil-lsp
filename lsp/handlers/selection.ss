@@ -1,7 +1,6 @@
 ;;; -*- Gerbil -*-
 ;;; Selection range handler — textDocument/selectionRange
-(import :std/sugar
-        ../util/log
+(import ../util/log
         ../util/position
         ../state
         ../analysis/document
