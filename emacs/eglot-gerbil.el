@@ -19,6 +19,8 @@
 ;;   - Semantic token faces tuned for Gerbil Scheme
 ;;   - Workspace symbol search with completion UI
 ;;   - Organize imports code action shortcut
+;;   - Refactoring: extract to def, wrap in form, add export, cond↔if
+;;   - Diagnostic tag faces (unused = faded, deprecated = strikethrough)
 ;;   - Project configuration (.gerbil-lsp.json)
 ;;
 ;; Eglot already handles completion, hover, go-to-definition, references,
@@ -546,6 +548,64 @@ reporting results via window/showMessage."
   (eglot-code-actions nil nil "source.organizeImports" t))
 
 ;; =====================================================================
+;; Refactoring commands (extract, wrap, add-export, cond↔if)
+;; =====================================================================
+
+;;;###autoload
+(defun eglot-gerbil-extract-to-def ()
+  "Extract the selected expression to a new top-level `def'.
+Requires an active region.  The server replaces the selection with
+a call to the new function and inserts the def above."
+  (interactive)
+  (eglot-gerbil--ensure-server)
+  (unless (use-region-p)
+    (user-error "Select the expression to extract first"))
+  (eglot-code-actions (region-beginning) (region-end) "refactor.extract" t))
+
+;;;###autoload
+(defun eglot-gerbil-wrap-in-form ()
+  "Wrap the selected expression in a Scheme form.
+Presents available wrapping options (when, unless, let, begin, try).
+Requires an active region."
+  (interactive)
+  (eglot-gerbil--ensure-server)
+  (unless (use-region-p)
+    (user-error "Select the expression to wrap first"))
+  (eglot-code-actions (region-beginning) (region-end) "refactor.rewrite"))
+
+;;;###autoload
+(defun eglot-gerbil-add-missing-export ()
+  "Add the symbol at point to the file's (export ...) form.
+Only offered when the cursor is on a defined-but-not-exported symbol."
+  (interactive)
+  (eglot-gerbil--ensure-server)
+  (eglot-code-actions (point) (point) "quickfix" t))
+
+;;;###autoload
+(defun eglot-gerbil-convert-conditional ()
+  "Convert between `cond' and `if' at point.
+If the cursor is on a `cond' with two clauses, converts to `if'.
+If the cursor is on an `if', converts to `cond'."
+  (interactive)
+  (eglot-gerbil--ensure-server)
+  (eglot-code-actions (point) (point) "refactor.rewrite" t))
+
+;; =====================================================================
+;; Diagnostic tag faces (unused = faded, deprecated = strikethrough)
+;; =====================================================================
+
+(defface eglot-gerbil-unnecessary-face
+  '((t :inherit shadow))
+  "Face for unnecessary/unused code (DiagnosticTag.Unnecessary).
+Applied to unused imports and dead code."
+  :group 'eglot-gerbil)
+
+(defface eglot-gerbil-deprecated-face
+  '((t :strike-through t))
+  "Face for deprecated symbols (DiagnosticTag.Deprecated)."
+  :group 'eglot-gerbil)
+
+;; =====================================================================
 ;; Project configuration
 ;; =====================================================================
 
@@ -609,6 +669,11 @@ If the file does not exist, inserts a starter template."
     (define-key map (kbd "C-c l s") #'eglot-gerbil-workspace-symbol)
     ;; Organize imports
     (define-key map (kbd "C-c l o") #'eglot-gerbil-organize-imports)
+    ;; Refactoring
+    (define-key map (kbd "C-c l x") #'eglot-gerbil-extract-to-def)
+    (define-key map (kbd "C-c l (") #'eglot-gerbil-wrap-in-form)
+    (define-key map (kbd "C-c l e") #'eglot-gerbil-add-missing-export)
+    (define-key map (kbd "C-c l C") #'eglot-gerbil-convert-conditional)
     ;; Project config
     (define-key map (kbd "C-c l p") #'eglot-gerbil-edit-project-config)
     ;; Standard Eglot commands on convenient keys
@@ -627,7 +692,7 @@ If the file does not exist, inserts a starter template."
 ;;;###autoload
 (define-minor-mode eglot-gerbil-mode
   "Minor mode for Gerbil-specific Eglot extensions.
-Adds code lenses, call/type hierarchy, selection range, custom
+Adds code lenses, call/type hierarchy, selection range, refactoring
 commands, and convenient keybindings.
 
 \\{eglot-gerbil-mode-map}"
