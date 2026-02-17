@@ -64,4 +64,5 @@
     "lsp/handlers/execute-command"
     "lsp/handlers/will-rename"
     "lsp/server"
+    "lsp/handlers/apply-edit"
     (exe: "lsp/main" bin: "gerbil-lsp")))

@@ -91,7 +91,9 @@
     ("message" #t string)
     ("severity" #f integer)
     ("source" #f string)
-    ("code" #f any)))
+    ("code" #f any)
+    ("tags" #f vector)
+    ("relatedInformation" #f vector)))
 
 (def *schema:completion-item*
   '(("label" #t string)

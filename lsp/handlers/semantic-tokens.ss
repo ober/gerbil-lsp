@@ -80,15 +80,82 @@
       '("defstruct" "defclass" "deferror-class" "deftable" "definterface"))
     ht))
 
+;;; Previous token cache for delta support: uri → (result-id . encoded-data-vector)
+(def *previous-tokens* (make-hash-table))
+(def *result-id-counter* 0)
+
+;;; Generate a fresh result ID
+(def (next-result-id!)
+  (set! *result-id-counter* (+ *result-id-counter* 1))
+  (number->string *result-id-counter*))
+
 ;;; Handle textDocument/semanticTokens/full
 (def (handle-semantic-tokens-full params)
   (let* ((td (hash-ref params "textDocument" (hash)))
          (uri (hash-ref td "uri" ""))
          (doc (get-document uri)))
     (if doc
-      (let ((tokens (tokenize-source (document-text doc))))
-        (hash ("data" (encode-semantic-tokens tokens))))
+      (let* ((tokens (tokenize-source (document-text doc)))
+             (data (encode-semantic-tokens tokens))
+             (rid (next-result-id!)))
+        ;; Cache for delta requests
+        (hash-put! *previous-tokens* uri (cons rid data))
+        (hash ("resultId" rid) ("data" data)))
       (hash ("data" [])))))
+
+;;; Handle textDocument/semanticTokens/full/delta
+;;; Returns edits relative to a previous token result, or a full result if previous unknown
+(def (handle-semantic-tokens-delta params)
+  (let* ((td (hash-ref params "textDocument" (hash)))
+         (uri (hash-ref td "uri" ""))
+         (prev-rid (hash-ref params "previousResultId" ""))
+         (doc (get-document uri)))
+    (if doc
+      (let* ((tokens (tokenize-source (document-text doc)))
+             (new-data (encode-semantic-tokens tokens))
+             (rid (next-result-id!))
+             (cached (hash-get *previous-tokens* uri)))
+        ;; Update cache
+        (hash-put! *previous-tokens* uri (cons rid new-data))
+        (if (and cached (string=? (car cached) prev-rid))
+          ;; Compute delta edits
+          (let ((edits (compute-token-edits (cdr cached) new-data)))
+            (hash ("resultId" rid) ("edits" (list->vector edits))))
+          ;; Previous unknown, return full result
+          (hash ("resultId" rid) ("data" new-data))))
+      (hash ("data" [])))))
+
+;;; Compute semantic token edits between old and new data vectors
+;;; Returns a list of edit objects: {"start": n, "deleteCount": m, "data": [...]}
+(def (compute-token-edits old-data new-data)
+  (let ((old-len (vector-length old-data))
+        (new-len (vector-length new-data)))
+    ;; Find first difference
+    (let ((start (let loop ((i 0))
+                   (cond
+                     ((or (>= i old-len) (>= i new-len)) i)
+                     ((= (vector-ref old-data i) (vector-ref new-data i))
+                      (loop (+ i 1)))
+                     (else i)))))
+      ;; Find last difference (from the end)
+      (let ((end-match (let loop ((oi (- old-len 1)) (ni (- new-len 1)) (count 0))
+                         (cond
+                           ((or (< oi start) (< ni start)) count)
+                           ((= (vector-ref old-data oi) (vector-ref new-data ni))
+                            (loop (- oi 1) (- ni 1) (+ count 1)))
+                           (else count)))))
+        (let ((delete-count (- old-len start end-match))
+              (insert-end (- new-len end-match)))
+          (if (and (= delete-count 0) (= insert-end start))
+            [] ;; No changes
+            (let ((insert-data
+                   (let loop ((i start) (acc '()))
+                     (if (>= i insert-end)
+                       (list->vector (reverse acc))
+                       (loop (+ i 1) (cons (vector-ref new-data i) acc))))))
+              (list (hash ("start" start)
+                          ("deleteCount" delete-count)
+                          ("data" insert-data))))))))))
 
 ;;; Tokenize source text into a list of (line col length type modifiers)
 (def (tokenize-source text)
@@ -314,6 +381,32 @@
                   (char-numeric? (string-ref name i)))
               (loop (+ i 1) has-alpha?))
              (else #f))))))
+
+;;; Handle textDocument/semanticTokens/range
+;;; Only tokenize within the requested range for better performance
+(def (handle-semantic-tokens-range params)
+  (let* ((td (hash-ref params "textDocument" (hash)))
+         (uri (hash-ref td "uri" ""))
+         (range (hash-ref params "range" (hash)))
+         (start (hash-ref range "start" (hash)))
+         (end (hash-ref range "end" (hash)))
+         (start-line (hash-ref start "line" 0))
+         (end-line (hash-ref end "line" 0))
+         (doc (get-document uri)))
+    (if doc
+      (let ((tokens (tokenize-source-range (document-text doc) start-line end-line)))
+        (hash ("data" (encode-semantic-tokens tokens))))
+      (hash ("data" [])))))
+
+;;; Tokenize only within a line range (for range requests)
+(def (tokenize-source-range text start-line end-line)
+  (let ((all-tokens (tokenize-source text)))
+    ;; Filter to only tokens within the requested range
+    (filter
+      (lambda (tok)
+        (let ((line (car tok)))
+          (and (>= line start-line) (<= line end-line))))
+      all-tokens)))
 
 ;;; Count lines/cols in a span of text
 (def (count-span text start end cur-line cur-col)

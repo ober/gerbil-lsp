@@ -108,6 +108,10 @@
   ;; Semantic tokens
   (register-request-handler! "textDocument/semanticTokens/full"
     handle-semantic-tokens-full)
+  (register-request-handler! "textDocument/semanticTokens/range"
+    handle-semantic-tokens-range)
+  (register-request-handler! "textDocument/semanticTokens/full/delta"
+    handle-semantic-tokens-delta)
   ;; Range formatting
   (register-request-handler! "textDocument/rangeFormatting" handle-range-formatting)
   ;; Inlay hints

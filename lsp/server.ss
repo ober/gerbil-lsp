@@ -66,10 +66,15 @@
     (send-notification! "$/progress"
       (hash ("token" token) ("value" value)))))
 
+;;; Pending request tracking: id → callback or condvar+result-cell
+(def *pending-requests* (make-hash-table))
+(def *pending-requests-mutex* (make-mutex 'pending-requests))
+
 ;;; Send a request from server to client (thread-safe)
-;;; Note: This is fire-and-forget; we don't track the response.
+;;; Optional callback: called with (result-or-error) when response arrives.
+;;; Without callback, fire-and-forget.
 (def *next-server-request-id* 0)
-(def (send-request! method params)
+(def (send-request! method params callback: (callback #f))
   (when *output-port*
     (let* ((id (begin (set! *next-server-request-id*
                         (+ *next-server-request-id* 1))
@@ -79,6 +84,11 @@
                         ("id" id)
                         ("method" method)
                         ("params" params)))))
+      ;; Register callback if provided
+      (when callback
+        (mutex-lock! *pending-requests-mutex*)
+        (hash-put! *pending-requests* id callback)
+        (mutex-unlock! *pending-requests-mutex*))
       (mutex-lock! *output-mutex*)
       (with-catch
         (lambda (e)
@@ -86,7 +96,42 @@
           (raise e))
         (lambda ()
           (write-message *output-port* msg)
-          (mutex-unlock! *output-mutex*))))))
+          (mutex-unlock! *output-mutex*)))
+      id)))
+
+;;; Send a request and wait synchronously for the response.
+;;; Returns the result hash, or #f on timeout/error.
+;;; Timeout in seconds (default: 5).
+(def (send-request-sync! method params timeout: (timeout 5))
+  (let ((mx (make-mutex 'sync-request))
+        (cv (make-condition-variable 'sync-response))
+        (result-cell (box #f)))
+    (mutex-lock! mx)
+    (send-request! method params
+      callback: (lambda (response)
+                  (set-box! result-cell response)
+                  (mutex-lock! mx)
+                  (condition-variable-signal! cv)
+                  (mutex-unlock! mx)))
+    ;; Wait for response with timeout
+    (let ((deadline (+ (time->seconds (current-time)) timeout)))
+      (mutex-unlock! mx cv (seconds->time deadline)))
+    (unbox result-cell)))
+
+;;; Dispatch a response to its pending callback
+(def (dispatch-response! msg)
+  (let ((id (jsonrpc-id msg)))
+    (mutex-lock! *pending-requests-mutex*)
+    (let ((callback (hash-ref *pending-requests* id #f)))
+      (when callback
+        (hash-remove! *pending-requests* id))
+      (mutex-unlock! *pending-requests-mutex*)
+      (when callback
+        (let ((result (or (hash-ref msg "result" #f)
+                          (hash-ref msg "error" #f))))
+          (with-catch
+            (lambda (e) (lsp-error "response callback error: ~a" e))
+            (lambda () (callback result))))))))
 
 ;;; Main server loop — reads from stdin, dispatches, writes to stdout
 (def (start-server (input-port (current-input-port))
@@ -122,6 +167,10 @@
       ;; Notification — has method, no id, no response
       ((jsonrpc-notification? msg)
        (handle-notification msg))
+
+      ;; Response — has id, no method — from client answering our request
+      ((jsonrpc-response? msg)
+       (dispatch-response! msg))
 
       (else
        (lsp-warn "unexpected message type: ~a" json-str)))))

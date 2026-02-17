@@ -206,6 +206,42 @@
                   (member (string->symbol (sym-info-name s)) export-names))
                 syms))))))))
 
+;;; Resolve an aliased name through rename-in / prefix-in chains
+;;; Given an import spec and a lookup name, returns the original name in the source module
+;;; For example:
+;;;   (rename-in :mod (old new)) with name "new" → "old"
+;;;   (prefix-in :mod px-) with name "px-foo" → "foo"
+;;; Returns the original name string, or the name unchanged if no alias applies
+(def (resolve-aliased-name spec name)
+  (cond
+    ((not (pair? spec)) name)
+    ((eq? (car spec) 'rename-in)
+     ;; (rename-in module-spec (old new) ...)
+     (let loop ((mappings (cddr spec)))
+       (if (null? mappings) name
+         (let ((mapping (car mappings)))
+           (if (and (pair? mapping)
+                    (= (length mapping) 2)
+                    (symbol? (cadr mapping))
+                    (string=? name (symbol->string (cadr mapping))))
+             ;; Found rename: new → old
+             (symbol->string (car mapping))
+             (loop (cdr mappings)))))))
+    ((eq? (car spec) 'prefix-in)
+     ;; (prefix-in module-spec prefix)
+     (if (and (>= (length spec) 3) (symbol? (caddr spec)))
+       (let ((prefix (symbol->string (caddr spec))))
+         (if (and (> (string-length name) (string-length prefix))
+                  (string-prefix? prefix name))
+           ;; Strip prefix: px-foo → foo
+           (substring name (string-length prefix) (string-length name))
+           name))
+       name))
+    ((memq (car spec) '(only-in except-in))
+     ;; These don't rename, pass through
+     name)
+    (else name)))
+
 ;;; Get all symbols available from imports in a document
 (def (get-imported-symbols located-forms current-file)
   (let ((imports (extract-imports located-forms))

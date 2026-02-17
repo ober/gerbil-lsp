@@ -66,7 +66,8 @@
 
    ;; Code actions
    ("codeActionProvider"
-    (hash ("codeActionKinds" ["quickfix" "source.organizeImports"])
+    (hash ("codeActionKinds" ["quickfix" "source.organizeImports"
+                              "refactor.extract" "refactor.rewrite"])
           ("resolveProvider" #t)))
 
    ;; Document highlight
@@ -86,7 +87,8 @@
     (hash ("legend"
            (hash ("tokenTypes" *capability-token-types*)
                  ("tokenModifiers" *capability-token-modifiers*)))
-          ("full" #t)))
+          ("full" (hash ("delta" #t)))
+          ("range" #t)))
 
    ;; Inlay hints
    ("inlayHintProvider" (hash ("resolveProvider" #t)))

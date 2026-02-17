@@ -1,7 +1,8 @@
 ;;; -*- Gerbil -*-
 ;;; Tests for lsp/analysis/parser
 (import :std/test
-        :lsp/lsp/analysis/parser)
+        :lsp/lsp/analysis/parser
+        :lsp/lsp/util/position)
 
 (export parser-test-suite)
 
@@ -112,6 +113,58 @@
 
     (test-case "definition-form?: non-pair"
       (check (definition-form? 42) => #f))
+
+    ;; --- parse-source-resilient ---
+    (test-case "parse-source-resilient: valid source returns all forms"
+      (let ((forms (parse-source-resilient "(def x 1)\n(def y 2)")))
+        (check (length forms) => 2)
+        (check-equal? (located-form-form (car forms)) '(def x 1))
+        (check-equal? (located-form-form (cadr forms)) '(def y 2))))
+
+    (test-case "parse-source-resilient: empty string"
+      ;; Empty produces nothing from normal parse, recovery finds nothing
+      (let ((forms (parse-source-resilient "")))
+        (check (length forms) => 0)))
+
+    (test-case "parse-source-resilient: malformed between valid forms"
+      ;; Use #< which triggers an unreadable-object parse error
+      (let ((forms (parse-source-resilient "(def x 1)\n#<bad>\n(def z 3)")))
+        ;; Recovery should find at least 2 forms
+        (check (>= (length forms) 2) => #t)
+        ;; Filter to only successfully parsed forms (not #:parse-error)
+        (let ((valid-forms (filter
+                             (lambda (lf)
+                               (let ((f (located-form-form lf)))
+                                 (and (pair? f)
+                                      (not (eq? (car f) '#:parse-error)))))
+                             forms)))
+          (check (>= (length valid-forms) 2) => #t))))
+
+    (test-case "parse-source-resilient: completely broken source"
+      ;; Even completely broken source should not crash
+      (let ((forms (parse-source-resilient "(((")))
+        (check (list? forms) => #t)))
+
+    (test-case "parse-source-resilient: single valid form"
+      (let ((forms (parse-source-resilient "(def x 42)")))
+        (check (length forms) => 1)
+        (check-equal? (located-form-form (car forms)) '(def x 42))))
+
+    ;; --- offset->line-col ---
+    (test-case "offset->line-col: start of text"
+      (let-values (((l c) (offset->line-col "hello" 0)))
+        (check l => 0)
+        (check c => 0)))
+
+    (test-case "offset->line-col: second line"
+      (let-values (((l c) (offset->line-col "ab\ncd" 4)))
+        (check l => 1)
+        (check c => 1)))
+
+    (test-case "offset->line-col: at newline"
+      (let-values (((l c) (offset->line-col "ab\ncd" 2)))
+        (check l => 0)
+        (check c => 2)))
   ))
 
 (def main

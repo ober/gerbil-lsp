@@ -2,6 +2,8 @@
 ;;; Completion candidate generation
 (import ../types
         ../util/log
+        ../util/string
+        ../util/position
         ../state
         ./symbols
         ./parser
@@ -44,12 +46,83 @@
     "declare"
     "using" "with-methods"))
 
+;;; Classify the cursor context for completion filtering.
+;;; Returns: 'string | 'comment | 'import | 'head | 'top-level | 'argument
+(def (completion-context text line col)
+  (let* ((regions (classify-text-regions text))
+         (offset (line-col->offset text line col)))
+    (cond
+      ;; In string or comment — suppress completions
+      ((and (< offset (u8vector-length regions))
+            (= (u8vector-ref regions offset) 1))
+       'string)
+      ((and (< offset (u8vector-length regions))
+            (= (u8vector-ref regions offset) 2))
+       'comment)
+      (else
+       ;; Determine form context from the line text
+       (let* ((line-text (text-line-at text line))
+              (trimmed (let trim ((s line-text))
+                         (if (and (> (string-length s) 0)
+                                  (char-whitespace? (string-ref s 0)))
+                           (trim (substring s 1 (string-length s)))
+                           s))))
+         (cond
+           ;; Inside an import form
+           ((and (> (string-length trimmed) 0)
+                 (or (string-prefix? "(import" trimmed)
+                     ;; Check if current line is indented under an import
+                     (in-import-form? text line)))
+            'import)
+           ;; Head position: cursor right after opening paren
+           ((head-position? line-text col)
+            'head)
+           ;; Top-level: column 0 or just after (
+           ((= col 0) 'top-level)
+           ;; Otherwise it's an argument position
+           (else 'argument)))))))
+
+;;; Check if cursor is in head position (right after an open paren)
+(def (head-position? line-text col)
+  (and (> col 0)
+       (< col (string-length line-text))
+       ;; Scan back to see if the previous non-space is (
+       (let loop ((i (- col 1)))
+         (cond
+           ((< i 0) #f)
+           ((char=? (string-ref line-text i) #\() #t)
+           ((char-whitespace? (string-ref line-text i)) (loop (- i 1)))
+           (else #f)))))
+
+;;; Check if a line is inside an import form by scanning upward
+(def (in-import-form? text line)
+  (let loop ((l (- line 1)))
+    (if (< l 0) #f
+      (let ((lt (text-line-at text l)))
+        (cond
+          ;; Found import form start
+          ((string-contains lt "(import")
+           ;; Check it hasn't been closed before our line
+           #t)
+          ;; Non-indented line — we've gone past the form
+          ((and (> (string-length lt) 0)
+                (not (char-whitespace? (string-ref lt 0))))
+           #f)
+          (else (loop (- l 1))))))))
+
 ;;; Generate completion candidates for a position in a document
 (def (completion-candidates uri text line col)
   (let ((prefix (get-completion-prefix text line col))
+        (ctx (completion-context text line col))
         (result '())
         (seen (make-hash-table)))  ;; deduplicate by name
-    (lsp-debug "completion prefix: ~s" prefix)
+    (lsp-debug "completion prefix: ~s context: ~a" prefix ctx)
+
+    ;; Suppress completions in strings and comments
+    (when (memq ctx '(string comment))
+      (set! result '())
+      ;; Force early return by setting prefix to impossible value
+      (set! prefix #f))
 
     ;; Helper to add an item, deduplicating by label
     (define (add-item! item)
@@ -58,48 +131,52 @@
           (hash-put! seen label #t)
           (set! result (cons item result)))))
 
-    ;; Local symbols from this file
+    ;; Local symbols from this file (sort-prefix "0" = highest priority)
     (let ((file-syms (get-file-symbols uri)))
       (for-each
         (lambda (s)
           (when (or (not prefix) (string-prefix? prefix (sym-info-name s)))
-            (add-item! (sym-info->completion-item s))))
+            (add-item! (sym-info->completion-item s sort-prefix: "0"))))
         file-syms))
 
-    ;; Symbols from the file's imports (resolved from import specs)
+    ;; Symbols from the file's imports (sort-prefix "1" = imported)
     (with-catch
       (lambda (e) (lsp-debug "import completion failed: ~a" e))
       (lambda ()
         (let* ((file-path (uri->file-path uri))
-               (forms (parse-source text))
+               (forms (parse-source-resilient text))
                (imported (get-imported-symbols forms file-path)))
           (for-each
             (lambda (s)
               (when (or (not prefix) (string-prefix? prefix (sym-info-name s)))
-                (add-item! (sym-info->completion-item s detail-uri: "imported"))))
+                (add-item! (sym-info->completion-item s detail-uri: "imported"
+                                                       sort-prefix: "1"))))
             imported))))
 
-    ;; Keywords
-    (for-each
-      (lambda (kw)
-        (when (or (not prefix) (string-prefix? prefix kw))
-          (add-item! (hash ("label" kw)
-                           ("kind" CompletionItemKind.Keyword)
-                           ("detail" "keyword")))))
-      *gerbil-keywords*)
+    ;; Keywords (sort-prefix depends on context — rank higher in head position)
+    (let ((kw-sort (if (eq? ctx 'head) "0" "3")))
+      (for-each
+        (lambda (kw)
+          (when (or (not prefix) (string-prefix? prefix kw))
+            (add-item! (hash ("label" kw)
+                             ("kind" CompletionItemKind.Keyword)
+                             ("detail" "keyword")
+                             ("sortText" (string-append kw-sort kw))))))
+        *gerbil-keywords*))
 
-    ;; Symbols from all indexed files
+    ;; Symbols from all indexed files (sort-prefix "2" = workspace)
     (hash-for-each
       (lambda (other-uri syms)
         (unless (string=? other-uri uri)
           (for-each
             (lambda (s)
               (when (or (not prefix) (string-prefix? prefix (sym-info-name s)))
-                (add-item! (sym-info->completion-item s detail-uri: other-uri))))
+                (add-item! (sym-info->completion-item s detail-uri: other-uri
+                                                       sort-prefix: "2"))))
             syms)))
       *symbol-index*)
 
-    ;; Standard library symbols (fallback for modules not yet imported)
+    ;; Standard library symbols (sort-prefix "3" = stdlib fallback)
     (for-each
       (lambda (entry)
         (let ((name (car entry))
@@ -108,6 +185,7 @@
             (add-item! (hash ("label" name)
                              ("kind" CompletionItemKind.Function)
                              ("detail" mod)
+                             ("sortText" (string-append "3" name))
                              ("data" (hash ("module" mod)
                                            ("name" name))))))))
       *stdlib-symbols*)
@@ -117,14 +195,16 @@
     result))
 
 ;;; Convert a sym-info to a CompletionItem
-(def (sym-info->completion-item s detail-uri: (detail-uri #f))
+;;; sort-prefix controls ranking: "0" = local, "1" = imported, "2" = workspace
+(def (sym-info->completion-item s detail-uri: (detail-uri #f) sort-prefix: (sort-prefix "2"))
   (let ((kind (sym-kind->completion-kind (sym-info-kind s)))
         (detail (or (sym-info-detail s)
                     (and detail-uri (string-append "from " detail-uri))
                     "")))
     (hash ("label" (sym-info-name s))
           ("kind" kind)
-          ("detail" detail))))
+          ("detail" detail)
+          ("sortText" (string-append sort-prefix (sym-info-name s))))))
 
 ;;; Map SymbolKind to CompletionItemKind
 (def (sym-kind->completion-kind sk)

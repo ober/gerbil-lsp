@@ -53,6 +53,10 @@
 (def DiagnosticSeverity.Information 3)
 (def DiagnosticSeverity.Hint        4)
 
+;;; DiagnosticTag
+(def DiagnosticTag.Unnecessary 1)
+(def DiagnosticTag.Deprecated  2)
+
 ;;; TextDocumentSyncKind
 (def TextDocumentSyncKind.None        0)
 (def TextDocumentSyncKind.Full        1)
@@ -78,13 +82,22 @@
 (def (make-diagnostic range message
                       severity: (severity DiagnosticSeverity.Error)
                       source: (source "gerbil-lsp")
-                      code: (code (void)))
+                      code: (code (void))
+                      tags: (tags (void))
+                      related-information: (related-information (void)))
   (let ((diag (hash ("range" range)
                      ("message" message)
                      ("severity" severity)
                      ("source" source))))
     (unless (void? code)
       (hash-put! diag "code" code))
+    (unless (void? tags)
+      (hash-put! diag "tags" (if (list? tags) (list->vector tags) tags)))
+    (unless (void? related-information)
+      (hash-put! diag "relatedInformation"
+        (if (list? related-information)
+          (list->vector related-information)
+          related-information)))
     diag))
 
 (def (make-completion-item label

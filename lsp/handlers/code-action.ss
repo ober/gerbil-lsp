@@ -17,6 +17,8 @@
 (def CodeActionKind.QuickFix            "quickfix")
 (def CodeActionKind.Source              "source")
 (def CodeActionKind.SourceOrganizeImports "source.organizeImports")
+(def CodeActionKind.RefactorExtract     "refactor.extract")
+(def CodeActionKind.RefactorRewrite     "refactor.rewrite")
 
 ;;; Handle textDocument/codeAction
 ;;; Returns CodeAction[] with available actions (lazy — no edit, just data)
@@ -28,7 +30,11 @@
          (doc (get-document uri)))
     (if doc
       (let ((text (document-text doc))
-            (actions '()))
+            (actions '())
+            (start-line (hash-ref (hash-ref range "start" (hash)) "line" 0))
+            (start-col (hash-ref (hash-ref range "start" (hash)) "character" 0))
+            (end-line (hash-ref (hash-ref range "end" (hash)) "line" 0))
+            (end-col (hash-ref (hash-ref range "end" (hash)) "character" 0)))
         ;; Always offer "organize imports" if there are imports
         (let ((organize (make-organize-imports-action uri text)))
           (when organize
@@ -40,6 +46,26 @@
           ;; Offer "remove unused import" for unused-import diagnostics
           (let ((unused-actions (make-remove-unused-import-actions uri text diags)))
             (set! actions (append actions unused-actions))))
+        ;; Offer "extract to def" when text is selected
+        (when (or (not (= start-line end-line)) (not (= start-col end-col)))
+          (set! actions (cons (make-extract-to-def-action uri start-line start-col
+                                                          end-line end-col)
+                              actions)))
+        ;; Offer "wrap in form" when text is selected
+        (when (or (not (= start-line end-line)) (not (= start-col end-col)))
+          (for-each
+            (lambda (wrapper)
+              (set! actions (cons (make-wrap-in-form-action uri wrapper
+                                   start-line start-col end-line end-col)
+                                  actions)))
+            '("when" "unless" "let" "begin" "try")))
+        ;; Offer "add missing export" for defined-but-not-exported symbols
+        (let ((export-actions (make-add-export-actions uri text start-line)))
+          (set! actions (append actions export-actions)))
+        ;; Offer "convert cond↔if" when cursor is on cond/if
+        (let ((convert-action (make-convert-conditional-action uri text start-line)))
+          (when convert-action
+            (set! actions (cons convert-action actions))))
         (list->vector actions))
       [])))
 
@@ -75,6 +101,39 @@
                      (let* ((line (hash-ref data "line" 0))
                             (edit (make-remove-import-edit uri text
                                     (hash-ref data "importName" "") line)))
+                       (if edit
+                         (begin (hash-put! params "edit" edit) params)
+                         params)))
+                    ((string=? type "extract-to-def")
+                     (let ((edit (compute-extract-to-def-edit
+                                   uri text
+                                   (hash-ref data "startLine" 0)
+                                   (hash-ref data "startCol" 0)
+                                   (hash-ref data "endLine" 0)
+                                   (hash-ref data "endCol" 0))))
+                       (hash-put! params "edit" edit)
+                       params))
+                    ((string=? type "wrap-in-form")
+                     (let ((edit (compute-wrap-in-form-edit
+                                   uri text
+                                   (hash-ref data "wrapper" "begin")
+                                   (hash-ref data "startLine" 0)
+                                   (hash-ref data "startCol" 0)
+                                   (hash-ref data "endLine" 0)
+                                   (hash-ref data "endCol" 0))))
+                       (hash-put! params "edit" edit)
+                       params))
+                    ((string=? type "add-export")
+                     (let ((edit (compute-add-export-edit
+                                   uri text
+                                   (hash-ref data "symbol" ""))))
+                       (hash-put! params "edit" edit)
+                       params))
+                    ((string=? type "convert-conditional")
+                     (let ((edit (compute-convert-conditional-edit
+                                   uri text
+                                   (hash-ref data "line" 0)
+                                   (hash-ref data "direction" ""))))
                        (if edit
                          (begin (hash-put! params "edit" edit) params)
                          params)))
@@ -359,4 +418,333 @@
        (loop (+ i 1) (+ i 1) (cons (substring text start i) lines)))
       (else
        (loop (+ i 1) start lines)))))
+
+;;; ====================================================================
+;;; Extract to def
+;;; ====================================================================
+
+;;; Create "Extract to def" code action (lazy)
+(def (make-extract-to-def-action uri start-line start-col end-line end-col)
+  (hash
+    ("title" "Extract to def")
+    ("kind" CodeActionKind.RefactorExtract)
+    ("data" (hash ("type" "extract-to-def")
+                  ("uri" uri)
+                  ("startLine" start-line)
+                  ("startCol" start-col)
+                  ("endLine" end-line)
+                  ("endCol" end-col)))))
+
+;;; Compute workspace edit for extracting selection to a top-level def
+(def (compute-extract-to-def-edit uri text start-line start-col end-line end-col)
+  (let* ((lines (string-split-lines text))
+         (selected (extract-text-range lines start-line start-col end-line end-col))
+         (def-name "extracted")
+         (def-text (format "(def (~a)\n  ~a)\n\n" def-name selected))
+         ;; Insert the new def before the form containing the selection
+         (insert-line (find-containing-form-start lines start-line)))
+    (hash ("changes"
+           (hash (uri
+                  (vector
+                    ;; Insert new def
+                    (make-text-edit
+                      (make-lsp-range insert-line 0 insert-line 0)
+                      def-text)
+                    ;; Replace selection with call
+                    (make-text-edit
+                      (make-lsp-range start-line start-col end-line end-col)
+                      (format "(~a)" def-name)))))))))
+
+;;; Extract text from a line range
+(def (extract-text-range lines start-line start-col end-line end-col)
+  (let ((num-lines (length lines)))
+    (cond
+      ((>= start-line num-lines) "")
+      ((= start-line end-line)
+       (let ((line (list-ref lines start-line)))
+         (substring line
+                    (min start-col (string-length line))
+                    (min end-col (string-length line)))))
+      (else
+       (let ((out (open-output-string)))
+         ;; First line from start-col
+         (let ((first (list-ref lines start-line)))
+           (display (substring first (min start-col (string-length first))
+                               (string-length first)) out))
+         ;; Middle lines (full)
+         (let loop ((i (+ start-line 1)))
+           (when (< i (min end-line num-lines))
+             (display "\n" out)
+             (display (list-ref lines i) out)
+             (loop (+ i 1))))
+         ;; Last line up to end-col
+         (when (< end-line num-lines)
+           (display "\n" out)
+           (let ((last-line (list-ref lines end-line)))
+             (display (substring last-line 0 (min end-col (string-length last-line))) out)))
+         (get-output-string out))))))
+
+;;; Find the start line of the top-level form containing the given line
+(def (find-containing-form-start lines target-line)
+  (let loop ((i target-line))
+    (cond
+      ((<= i 0) 0)
+      ((let ((line (list-ref lines i)))
+         (and (> (string-length line) 0)
+              (char=? (string-ref line 0) #\()))
+       i)
+      (else (loop (- i 1))))))
+
+;;; ====================================================================
+;;; Wrap in form
+;;; ====================================================================
+
+;;; Create "Wrap in <form>" code action (lazy)
+(def (make-wrap-in-form-action uri wrapper start-line start-col end-line end-col)
+  (hash
+    ("title" (format "Wrap in (~a ...)" wrapper))
+    ("kind" CodeActionKind.RefactorRewrite)
+    ("data" (hash ("type" "wrap-in-form")
+                  ("uri" uri)
+                  ("wrapper" wrapper)
+                  ("startLine" start-line)
+                  ("startCol" start-col)
+                  ("endLine" end-line)
+                  ("endCol" end-col)))))
+
+;;; Compute workspace edit for wrapping selection in a form
+(def (compute-wrap-in-form-edit uri text wrapper start-line start-col end-line end-col)
+  (let* ((lines (string-split-lines text))
+         (selected (extract-text-range lines start-line start-col end-line end-col))
+         (wrapped (cond
+                    ((string=? wrapper "let")
+                     (format "(let (())\n  ~a)" selected))
+                    (else
+                     (format "(~a ~a)" wrapper selected)))))
+    (hash ("changes"
+           (hash (uri
+                  (vector
+                    (make-text-edit
+                      (make-lsp-range start-line start-col end-line end-col)
+                      wrapped))))))))
+
+;;; ====================================================================
+;;; Add missing export
+;;; ====================================================================
+
+;;; Create "Add export" code actions for symbols defined but not exported
+(def (make-add-export-actions uri text cursor-line)
+  (let ((forms (parse-source text))
+        (actions '()))
+    ;; Find all export forms and collect exported names
+    (let ((exported (collect-exported-names forms))
+          (defined (collect-defined-names forms)))
+      ;; Find the form at the cursor line
+      (for-each
+        (lambda (def-entry)
+          (let ((name (car def-entry))
+                (line (cdr def-entry)))
+            (when (and (= line cursor-line)
+                       (not (hash-key? exported name))
+                       ;; Skip if export #t is used
+                       (not (hash-get exported "#t")))
+              (set! actions
+                (cons (hash
+                        ("title" (format "Add ~a to exports" name))
+                        ("kind" CodeActionKind.QuickFix)
+                        ("data" (hash ("type" "add-export")
+                                      ("uri" uri)
+                                      ("symbol" name))))
+                      actions)))))
+        defined))
+    actions))
+
+;;; Collect exported symbol names from (export ...) forms
+(def (collect-exported-names forms)
+  (let ((ht (make-hash-table)))
+    (for-each
+      (lambda (lf)
+        (let ((form (located-form-form lf)))
+          (when (and (pair? form) (eq? (car form) 'export))
+            (for-each
+              (lambda (spec)
+                (cond
+                  ((eq? spec #t) (hash-put! ht "#t" #t))
+                  ((symbol? spec) (hash-put! ht (symbol->string spec) #t))))
+              (cdr form)))))
+      forms)
+    ht))
+
+;;; Collect defined symbol names: ((name . line) ...)
+(def (collect-defined-names forms)
+  (let ((result '()))
+    (for-each
+      (lambda (lf)
+        (let ((form (located-form-form lf))
+              (line (located-form-line lf)))
+          (when (pair? form)
+            (let ((head (car form)))
+              (when (memq head '(def define defn defstruct defclass defmethod
+                                 defrule defrules defsyntax defconst defvalues))
+                (let ((name-part (and (pair? (cdr form)) (cadr form))))
+                  (cond
+                    ((symbol? name-part)
+                     (set! result (cons (cons (symbol->string name-part) line) result)))
+                    ((and (pair? name-part) (symbol? (car name-part)))
+                     (set! result (cons (cons (symbol->string (car name-part)) line)
+                                        result))))))))))
+      forms)
+    (reverse result)))
+
+;;; Compute workspace edit for adding a symbol to exports
+(def (compute-add-export-edit uri text symbol-name)
+  (let ((forms (parse-source text)))
+    ;; Find the (export ...) form
+    (let ((export-form (find-export-form forms)))
+      (if export-form
+        ;; Add to existing export form — append before closing paren
+        (let* ((end-line (located-form-end-line export-form))
+               (end-col (located-form-end-col export-form)))
+          (hash ("changes"
+                 (hash (uri
+                        (vector
+                          (make-text-edit
+                            (make-lsp-range end-line (- end-col 1) end-line (- end-col 1))
+                            (format " ~a" symbol-name))))))))
+        ;; No export form — insert one after imports
+        (let ((insert-line (find-export-insert-line forms)))
+          (hash ("changes"
+                 (hash (uri
+                        (vector
+                          (make-text-edit
+                            (make-lsp-range insert-line 0 insert-line 0)
+                            (format "(export ~a)\n" symbol-name))))))))))))
+
+;;; Find the (export ...) form
+(def (find-export-form forms)
+  (let loop ((fs forms))
+    (if (null? fs) #f
+      (let ((lf (car fs)))
+        (if (and (pair? (located-form-form lf))
+                 (eq? (car (located-form-form lf)) 'export))
+          lf
+          (loop (cdr fs)))))))
+
+;;; Find line after last import (for inserting export)
+(def (find-export-insert-line forms)
+  (let ((last-import-end 0))
+    (for-each
+      (lambda (lf)
+        (let ((form (located-form-form lf)))
+          (when (and (pair? form) (eq? (car form) 'import))
+            (set! last-import-end (+ (located-form-end-line lf) 1)))))
+      forms)
+    last-import-end))
+
+;;; ====================================================================
+;;; Convert cond ↔ if
+;;; ====================================================================
+
+;;; Create convert conditional action if cursor is on a cond or if form
+(def (make-convert-conditional-action uri text cursor-line)
+  (let ((forms (parse-source text)))
+    (let ((form-at (find-form-at-line forms cursor-line)))
+      (if (not form-at) #f
+        (let ((form (located-form-form form-at)))
+          (cond
+            ;; cond with exactly 2 clauses → convert to if
+            ((and (pair? form) (eq? (car form) 'cond)
+                  (= (length (cdr form)) 2))
+             (hash
+               ("title" "Convert cond to if")
+               ("kind" CodeActionKind.RefactorRewrite)
+               ("data" (hash ("type" "convert-conditional")
+                             ("uri" uri)
+                             ("line" cursor-line)
+                             ("direction" "cond-to-if")))))
+            ;; if → convert to cond
+            ((and (pair? form) (eq? (car form) 'if)
+                  (>= (length (cdr form)) 2))
+             (hash
+               ("title" "Convert if to cond")
+               ("kind" CodeActionKind.RefactorRewrite)
+               ("data" (hash ("type" "convert-conditional")
+                             ("uri" uri)
+                             ("line" cursor-line)
+                             ("direction" "if-to-cond")))))
+            (else #f)))))))
+
+;;; Find the form at or containing the given line
+(def (find-form-at-line forms line)
+  (let loop ((fs forms))
+    (if (null? fs) #f
+      (let ((lf (car fs)))
+        (if (and (>= line (located-form-line lf))
+                 (<= line (located-form-end-line lf)))
+          lf
+          (loop (cdr fs)))))))
+
+;;; Compute workspace edit for converting cond↔if
+(def (compute-convert-conditional-edit uri text line direction)
+  (let ((forms (parse-source text)))
+    (let ((form-at (find-form-at-line forms line)))
+      (if (not form-at) #f
+        (let ((form (located-form-form form-at))
+              (start-line (located-form-line form-at))
+              (start-col (located-form-col form-at))
+              (end-line (located-form-end-line form-at))
+              (end-col (located-form-end-col form-at)))
+          (cond
+            ((string=? direction "cond-to-if")
+             (let ((clauses (cdr form)))
+               (if (= (length clauses) 2)
+                 (let* ((clause1 (car clauses))
+                        (clause2 (cadr clauses))
+                        (test (if (pair? clause1) (car clause1) clause1))
+                        (then-body (if (pair? clause1) (cdr clause1) '()))
+                        (else-body (if (and (pair? clause2)
+                                            (eq? (car clause2) 'else))
+                                     (cdr clause2)
+                                     (if (pair? clause2) (cdr clause2) '())))
+                        (then-expr (if (= (length then-body) 1)
+                                     (format "~a" (car then-body))
+                                     (format "(begin ~a)" (format-list then-body))))
+                        (else-expr (if (= (length else-body) 1)
+                                     (format "~a" (car else-body))
+                                     (format "(begin ~a)" (format-list else-body))))
+                        (new-text (format "(if ~a\n  ~a\n  ~a)" test then-expr else-expr)))
+                   (hash ("changes"
+                          (hash (uri
+                                 (vector
+                                   (make-text-edit
+                                     (make-lsp-range start-line start-col end-line end-col)
+                                     new-text)))))))
+                 #f)))
+            ((string=? direction "if-to-cond")
+             (let* ((parts (cdr form))
+                    (test (car parts))
+                    (then-expr (cadr parts))
+                    (else-expr (if (pair? (cddr parts)) (caddr parts) #f))
+                    (new-text (if else-expr
+                                (format "(cond\n  (~a ~a)\n  (else ~a))"
+                                        test then-expr else-expr)
+                                (format "(cond\n  (~a ~a))"
+                                        test then-expr))))
+               (hash ("changes"
+                      (hash (uri
+                             (vector
+                               (make-text-edit
+                                 (make-lsp-range start-line start-col end-line end-col)
+                                 new-text))))))))
+            (else #f)))))))
+
+;;; Format a list of expressions as a space-separated string
+(def (format-list exprs)
+  (let ((out (open-output-string)))
+    (let loop ((es exprs) (first? #t))
+      (when (pair? es)
+        (unless first? (display " " out))
+        (display (car es) out)
+        (loop (cdr es) #f)))
+    (get-output-string out)))
 

@@ -57,7 +57,8 @@
     "test/code-lens-test.ss"
     "test/on-type-formatting-test.ss"
     "test/execute-command-test.ss"
-    "test/will-rename-test.ss"))
+    "test/will-rename-test.ss"
+    "test/apply-edit-test.ss"))
 
 (def (run-all-tests)
   (let ((failed '())

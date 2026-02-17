@@ -61,7 +61,7 @@
                                     ("diagnostics" (list->vector gxc-diags))))))))))))
             dependents))))))
 
-;;; Spawn a background thread to run gxc diagnostics
+;;; Spawn a background thread to run gxc diagnostics with progress reporting
 (def (spawn-gxc-diagnostics-thread! uri file-path text parse-diags)
   (mutex-lock! (diagnostics-mutex))
   ;; Cancel previous diagnostics thread if running
@@ -75,15 +75,31 @@
                   (lambda (e)
                     (lsp-debug "async gxc diagnostics failed: ~a" e))
                   (lambda ()
-                    (let ((gxc-diags (compile-diagnostics file-path text))
-                          (unused-diags (detect-unused-imports uri text)))
-                      ;; Cache and publish combined results
-                      (set-gxc-diagnostics! uri gxc-diags)
-                      (send-notification! "textDocument/publishDiagnostics"
-                        (hash ("uri" uri)
-                              ("diagnostics"
-                               (list->vector
-                                 (append parse-diags gxc-diags unused-diags))))))))))))
+                    ;; Report progress for compilation
+                    (let ((progress-token (string-append "gxc-" uri)))
+                      (with-catch (lambda (e) (void))
+                        (lambda ()
+                          (send-request! "window/workDoneProgress/create"
+                            (hash ("token" progress-token)))
+                          (send-progress! progress-token "begin"
+                            title: "Checking"
+                            message: (if (string? file-path)
+                                      (path-strip-directory file-path)
+                                      "buffer"))))
+                      (let ((gxc-diags (compile-diagnostics file-path text))
+                            (unused-diags (detect-unused-imports uri text)))
+                        ;; End progress
+                        (with-catch (lambda (e) (void))
+                          (lambda ()
+                            (send-progress! progress-token "end"
+                              message: "Done")))
+                        ;; Cache and publish combined results
+                        (set-gxc-diagnostics! uri gxc-diags)
+                        (send-notification! "textDocument/publishDiagnostics"
+                          (hash ("uri" uri)
+                                ("diagnostics"
+                                 (list->vector
+                                   (append parse-diags gxc-diags unused-diags)))))))))))))
     (set-diagnostics-thread! t)
     (mutex-unlock! (diagnostics-mutex))))
 
@@ -313,7 +329,7 @@
       (lsp-debug "detect-unused-imports failed: ~a" e)
       '())
     (lambda ()
-      (let* ((forms (parse-source text))
+      (let* ((forms (parse-source-resilient text))
              (import-specs (extract-imports forms))
              (lines (string-split-lines text))
              ;; Get the text after imports for usage checking
@@ -339,7 +355,8 @@
                                     (format "Unused import: ~a" spec)
                                     severity: DiagnosticSeverity.Warning
                                     source: "gerbil-lsp"
-                                    code: "unused-import")
+                                    code: "unused-import"
+                                    tags: (list DiagnosticTag.Unnecessary))
                                   diags))))))))))
           import-specs)
         diags))))

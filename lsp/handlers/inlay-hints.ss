@@ -44,8 +44,9 @@
           ;; Only process forms that overlap the visible range
           (when (and (<= fl end-line)
                      (>= (located-form-end-line lf) start-line))
-            (let ((hints (extract-call-hints form text uri fl)))
-              (set! result (append result hints))))))
+            (let ((call-hints (extract-call-hints form text uri fl))
+                  (type-hints (extract-let-type-hints form text fl)))
+              (set! result (append result call-hints type-hints))))))
       forms)
     result))
 
@@ -267,3 +268,134 @@
         ("label" (string-append label ":"))
         ("kind" kind)
         ("paddingRight" #t)))
+
+;;; ====================================================================
+;;; Let-binding type hints
+;;; ====================================================================
+
+;;; Known constructor → type mappings for heuristic type inference
+(def *constructor-types*
+  (let ((ht (make-hash-table)))
+    (for-each
+      (lambda (pair) (hash-put! ht (car pair) (cdr pair)))
+      '(("make-hash-table" . "HashTable")
+        ("hash" . "HashTable")
+        ("open-input-string" . "Port")
+        ("open-output-string" . "Port")
+        ("open-input-file" . "Port")
+        ("open-output-file" . "Port")
+        ("open-input-u8vector" . "Port")
+        ("open-output-u8vector" . "Port")
+        ("current-input-port" . "Port")
+        ("current-output-port" . "Port")
+        ("current-error-port" . "Port")
+        ("make-mutex" . "Mutex")
+        ("make-condition-variable" . "CondVar")
+        ("make-thread" . "Thread")
+        ("make-parameter" . "Parameter")
+        ("make-channel" . "Channel")
+        ("make-u8vector" . "u8vector")
+        ("make-vector" . "vector")
+        ("make-string" . "string")
+        ("string-append" . "string")
+        ("string-copy" . "string")
+        ("substring" . "string")
+        ("number->string" . "string")
+        ("symbol->string" . "string")
+        ("format" . "string")
+        ("get-output-string" . "string")
+        ("string->number" . "number?")
+        ("string-length" . "int")
+        ("vector-length" . "int")
+        ("length" . "int")
+        ("char->integer" . "int")
+        ("string->symbol" . "symbol")
+        ("gensym" . "symbol")
+        ("cons" . "pair")
+        ("list" . "list")
+        ("append" . "list")
+        ("reverse" . "list")
+        ("map" . "list")
+        ("filter" . "list")
+        ("sort" . "list")
+        ("vector" . "vector")
+        ("list->vector" . "vector")
+        ("vector->list" . "list")
+        ("read" . "datum")
+        ("read-line" . "string?")
+        ("read-char" . "char?")
+        ("string-ref" . "char")
+        ("integer->char" . "char")
+        ("regexp" . "Regexp")
+        ("pregexp" . "Regexp")))
+    ht))
+
+;;; Extract type hints from let/let*/letrec bindings
+(def (extract-let-type-hints form text context-line)
+  (if (not (pair? form))
+    '()
+    (let ((head (car form))
+          (result '()))
+      ;; Check for let/let*/letrec forms
+      (when (and (symbol? head)
+                 (memq head '(let let* letrec letrec*)))
+        (let ((bindings (and (pair? (cdr form))
+                             ;; let can have an optional name: (let name ((bindings)) body)
+                             (if (symbol? (cadr form))
+                               (and (pair? (cddr form)) (caddr form))
+                               (cadr form)))))
+          (when (and bindings (list? bindings))
+            (for-each
+              (lambda (binding)
+                (when (and (pair? binding)
+                           (symbol? (car binding))
+                           (pair? (cdr binding)))
+                  (let* ((var-name (symbol->string (car binding)))
+                         (init-expr (cadr binding))
+                         (inferred (infer-expression-type init-expr)))
+                    (when inferred
+                      ;; Find the position of the variable in text
+                      ;; We place the hint after the variable name
+                      (let ((hint-line context-line))
+                        (set! result
+                          (cons (hash
+                                  ("position" (make-lsp-position hint-line 0))
+                                  ("label" (string-append ": " inferred))
+                                  ("kind" InlayHintKind.Type)
+                                  ("paddingLeft" #t))
+                                result)))))))
+              bindings))))
+      ;; Recurse into subforms
+      (for-each
+        (lambda (sub)
+          (when (pair? sub)
+            (set! result (append result
+                           (extract-let-type-hints sub text context-line)))))
+        (if (pair? form) (cdr form) '()))
+      result)))
+
+;;; Infer the type of an expression based on known constructors
+(def (infer-expression-type expr)
+  (cond
+    ;; Direct constructor call: (make-hash-table), (open-input-string ...)
+    ((and (pair? expr) (symbol? (car expr)))
+     (let ((func-name (symbol->string (car expr))))
+       ;; Check constructor map
+       (let ((type (hash-get *constructor-types* func-name)))
+         (if type type
+           ;; Heuristic: make-FOO → FOO
+           (if (and (> (string-length func-name) 5)
+                    (string-prefix? "make-" func-name))
+             (substring func-name 5 (string-length func-name))
+             #f)))))
+    ;; String literal
+    ((string? expr) "string")
+    ;; Number literal
+    ((number? expr) "number")
+    ;; Boolean literal
+    ((boolean? expr) "bool")
+    ;; Character literal
+    ((char? expr) "char")
+    ;; Vector literal
+    ((vector? expr) "vector")
+    (else #f)))

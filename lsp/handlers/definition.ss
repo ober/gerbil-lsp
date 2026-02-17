@@ -90,6 +90,7 @@
           (loop (cdr entries)))))))
 
 ;;; Try to find a symbol definition by resolving the file's imports
+;;; Handles rename-in / prefix-in aliases through resolve-aliased-name
 (def (find-definition-in-imports name uri text)
   (with-catch
     (lambda (e)
@@ -102,9 +103,11 @@
         (let loop ((specs imports))
           (if (null? specs)
             (void)
-            (let ((path (resolve-import-spec (car specs) file-path)))
+            (let* ((spec (car specs))
+                   (path (resolve-import-spec spec file-path)))
               (if path
                 (let ((exports (analyze-file-exports path)))
+                  ;; First try direct name lookup
                   (let ((found (find-sym-by-name name exports)))
                     (if found
                       (make-lsp-location (path->uri path)
@@ -112,5 +115,15 @@
                                         (sym-info-col found)
                                         (sym-info-end-line found)
                                         (sym-info-end-col found)))
-                      (loop (cdr specs)))))
+                      ;; Try resolving through rename-in / prefix-in aliases
+                      (let* ((original-name (resolve-aliased-name spec name))
+                             (alias-found (and (not (string=? original-name name))
+                                               (find-sym-by-name original-name exports))))
+                        (if alias-found
+                          (make-lsp-location (path->uri path)
+                            (make-lsp-range (sym-info-line alias-found)
+                                            (sym-info-col alias-found)
+                                            (sym-info-end-line alias-found)
+                                            (sym-info-end-col alias-found)))
+                          (loop (cdr specs)))))))
                 (loop (cdr specs))))))))))
