@@ -16,7 +16,8 @@
    "comment"
    "string"
    "number"
-   "operator"])
+   "operator"
+   "property"])
 
 (def *capability-token-modifiers* ["definition" "readonly"])
 
@@ -118,7 +119,8 @@
 
    ;; Execute command
    ("executeCommandProvider"
-    (hash ("commands" ["gerbil-lsp.runTest" "gerbil-lsp.showReferences"])))
+    (hash ("commands" ["gerbil-lsp.runTest" "gerbil-lsp.showReferences"
+                       "gerbil-lsp.compileFile" "gerbil-lsp.buildProject"])))
 
    ;; Workspace capabilities
    ("workspace"

@@ -21,6 +21,7 @@
 (def SemanticTokenType.string    7)
 (def SemanticTokenType.number    8)
 (def SemanticTokenType.operator  9)
+(def SemanticTokenType.property  10)
 
 ;;; Semantic token modifier bit flags
 (def SemanticTokenModifier.definition  1)
@@ -29,7 +30,7 @@
 ;;; Token type legend (order must match indices above)
 (def *semantic-token-types*
   ["keyword" "function" "variable" "parameter" "type"
-   "macro" "comment" "string" "number" "operator"])
+   "macro" "comment" "string" "number" "operator" "property"])
 
 ;;; Token modifier legend
 (def *semantic-token-modifiers*
@@ -45,39 +46,100 @@
         "defvalues" "defconst" "deferror-class"
         "deftable" "definterface" "implement"
         "lambda" "let" "let*" "letrec" "letrec*"
-        "let-values" "let*-values"
+        "let-values" "let*-values" "letrec-values" "letrec*-values"
         "if" "cond" "case" "when" "unless"
         "and" "or" "not"
-        "begin" "begin0"
+        "begin" "begin0" "begin-syntax" "begin-foreign" "begin-ffi"
+        "begin-annotation"
         "do" "do-while" "while" "do-with-lock"
         "for" "for*" "for/collect" "for/fold"
         "set!" "set!-values"
-        "values" "receive" "call-with-values"
+        "values" "receive" "call-with-values" "call/values"
         "apply" "call/cc" "call-with-current-continuation"
         "with-catch" "with-exception-handler"
         "raise" "error"
         "import" "export"
         "require" "provide" "include"
         "quote" "quasiquote" "unquote" "unquote-splicing"
-        "syntax" "syntax-rules" "syntax-case"
-        "match" "with" "one-of"
+        "quote-syntax" "quasisyntax" "unsyntax" "unsyntax-splicing"
+        "syntax" "syntax-rules" "syntax-case" "syntax/loc"
+        "core-syntax-case" "core-ast-case" "core-match" "core-wrap"
+        "ast-rules" "with-ast" "with-ast*" "datum->syntax"
+        "match" "match*" "with" "one-of"
         "try" "catch" "finally"
-        "assert" "parameterize" "dynamic-wind" "guard"
-        "delay" "force" "declare" "using" "with-methods"))
+        "assert" "assert!" "parameterize" "parameterize*"
+        "dynamic-wind" "guard" "unwind-protect"
+        "delay" "force" "declare" "using" "with-methods"
+        "cond-expand" "case-lambda"
+        ;; Additional keywords from gerbil-mode.el
+        "rec" "alet" "alet*" "awhen" "let/cc" "let/esc"
+        "define-alias" "cut"
+        "sync" "wait"
+        "type-of" "is"
+        "spawn" "spawn*" "spawn/name" "spawn/group" "with-destroy"
+        "until"
+        "defmethod/alias" "with-methods" "with-class-methods"
+        "with-class-method"
+        "hash-eq" "hash-eqv" "let-hash"
+        "chain" "continue" "yield" "coroutine"
+        "<-" "<<" "->" "->>" "-->" "-->?"
+        "with-result" "defcall-actor" "defapi" "deftyped"
+        "defconst" "deferror-class" "do-while" "lambda%"
+        "with-contract" "module" "interface"
+        "with-interface" "with-struct" "with-class" "with-syntax"
+        "with-syntax*" "syntax-parameterize"
+        "defgeneric" "defmessage" "deftype" "definline" "definline*"
+        "define-values" "define-syntaxes"
+        "defproto" "extern" "defalias"
+        "defrules*" "for-each" "map" "foldl" "foldr"
+        "test-suite" "test-case" "with-result"
+        ;; Test macros from :std/test
+        "check" "checkf" "check-eq?" "check-not-eq?"
+        "check-eqv?" "check-equal?" "check-not-equal?"
+        "check-output" "check-predicate" "check-exception" "run-tests!"))
     ht))
 
 ;;; Gerbil macro-defining forms
 (def *macro-def-forms*
   (let ((ht (make-hash-table)))
     (for-each (lambda (kw) (hash-put! ht kw #t))
-      '("defrule" "defrules" "defsyntax" "defsyntax-call" "defsyntax-case"))
+      '("defrule" "defrules" "defrules*" "defsyntax" "defsyntax-call" "defsyntax-case"))
     ht))
 
 ;;; Gerbil type-defining forms
 (def *type-def-forms*
   (let ((ht (make-hash-table)))
     (for-each (lambda (kw) (hash-put! ht kw #t))
-      '("defstruct" "defclass" "deferror-class" "deftable" "definterface"))
+      '("defstruct" "defclass" "deferror-class" "deftable" "definterface" "interface"))
+    ht))
+
+;;; Definition name context: keyword → (token-type . modifiers)
+;;; After seeing one of these keywords, the NEXT symbol gets the indicated type+mods.
+(def *def-name-forms*
+  (let ((ht (make-hash-table)))
+    ;; function + definition
+    (for-each (lambda (s)
+                (hash-put! ht s (cons SemanticTokenType.function
+                                      SemanticTokenModifier.definition)))
+      '("def" "defn" "def*" "define" "defvalues" "extern" "defalias"
+        "definline" "definline*" "define-values" "define-syntaxes"
+        "defcall-actor" "defmethod" "defgeneric" "defmessage"
+        "deftype" "defproto"))
+    ;; type + definition
+    (for-each (lambda (s)
+                (hash-put! ht s (cons SemanticTokenType.type
+                                      SemanticTokenModifier.definition)))
+      '("defstruct" "defclass" "deferror-class" "deftable"
+        "definterface" "interface" "implement"))
+    ;; macro + definition
+    (for-each (lambda (s)
+                (hash-put! ht s (cons SemanticTokenType.macro
+                                      SemanticTokenModifier.definition)))
+      '("defsyntax" "defrule" "defrules" "defrules*"
+        "defsyntax-call" "defsyntax-case"))
+    ;; variable + readonly (for defconst)
+    (hash-put! ht "defconst"
+               (cons SemanticTokenType.variable SemanticTokenModifier.readonly))
     ht))
 
 ;;; Previous token cache for delta support: uri → (result-id . encoded-data-vector)
@@ -157,9 +219,22 @@
                           ("deleteCount" delete-count)
                           ("data" insert-data))))))))))
 
+;;; Split a symbol containing a dot in the middle into (obj-part . prop-part).
+;;; Returns #f if no mid-dot found.
+(def (dot-accessor-split name)
+  (let ((len (string-length name)))
+    (if (< len 3) #f
+      (let loop ((i 1))
+        (cond
+          ((>= i (- len 1)) #f)
+          ((char=? (string-ref name i) #\.)
+           (cons (substring name 0 i) (substring name (+ i 1) len)))
+          (else (loop (+ i 1))))))))
+
 ;;; Tokenize source text into a list of (line col length type modifiers)
 (def (tokenize-source text)
   (let ((tokens '())
+        (def-ctx #f)   ;; #f or (token-type . modifiers) for definition name context
         (len (string-length text)))
     (let loop ((i 0) (line 0) (col 0))
       (if (>= i len)
@@ -176,6 +251,7 @@
                (set! tokens (cons (list line col (- end i)
                                         SemanticTokenType.comment 0)
                                   tokens))
+               (set! def-ctx #f)
                (loop end line (+ col (- end i)))))
 
             ;; String literal
@@ -187,6 +263,7 @@
                    (set! tokens (cons (list line col str-len
                                             SemanticTokenType.string 0)
                                       tokens))
+                   (set! def-ctx #f)
                    (loop end end-line end-col)))))
 
             ;; Character literal: #\x
@@ -197,6 +274,7 @@
                (set! tokens (cons (list line col (- end i)
                                         SemanticTokenType.string 0)
                                   tokens))
+               (set! def-ctx #f)
                (loop end line (+ col (- end i)))))
 
             ;; Boolean literal: #t or #f
@@ -208,6 +286,7 @@
                (set! tokens (cons (list line col (- end i)
                                         SemanticTokenType.number 0)
                                   tokens))
+               (set! def-ctx #f)
                (loop end line (+ col (- end i)))))
 
             ;; Number: starts with digit, or - followed by digit, or . followed by digit
@@ -232,19 +311,37 @@
                        (set! tokens (cons (list line col (- end i)
                                                 SemanticTokenType.number 0)
                                           tokens))
+                       (set! def-ctx #f)
                        (loop end line (+ col (- end i))))
                      ;; Not actually a number, classify as symbol
                      (begin
-                       (set! tokens (cons (classify-symbol-token tok line col)
+                       (set! tokens (cons (classify-symbol-token tok line col def-ctx)
                                           tokens))
+                       ;; Update def-ctx based on this token
+                       (set! def-ctx (next-def-ctx tok def-ctx))
                        (loop end line (+ col (- end i)))))))))
 
             ;; Symbol/identifier
             ((symbol-start-char? c)
              (let* ((end (find-end-of-token text i len))
                     (tok (substring text i end))
-                    (token-info (classify-symbol-token tok line col)))
-               (set! tokens (cons token-info tokens))
+                    (dot-split (dot-accessor-split tok)))
+               (if dot-split
+                 ;; Dot-accessor: emit obj as variable, prop as property
+                 (let ((obj-len (string-length (car dot-split)))
+                       (prop-len (string-length (cdr dot-split))))
+                   (set! tokens (cons (list line col obj-len
+                                            SemanticTokenType.variable 0)
+                                      tokens))
+                   (set! tokens (cons (list line (+ col obj-len 1) prop-len
+                                            SemanticTokenType.property 0)
+                                      tokens))
+                   (set! def-ctx #f))
+                 ;; Regular symbol
+                 (begin
+                   (set! tokens (cons (classify-symbol-token tok line col def-ctx)
+                                      tokens))
+                   (set! def-ctx (next-def-ctx tok def-ctx))))
                (loop end line (+ col (- end i)))))
 
             ;; Quote characters: ' ` , ,@
@@ -255,10 +352,24 @@
             (else
              (loop (+ i 1) line (+ col 1)))))))))
 
-;;; Classify a symbol token into a semantic token type
-(def (classify-symbol-token name line col)
+;;; Compute the next def-ctx after emitting a token.
+;;; If the token is a defining keyword, set context for next symbol.
+;;; If def-ctx was set, consume it (return #f).
+(def (next-def-ctx tok current-def-ctx)
+  (if current-def-ctx
+    ;; def-ctx was just consumed by the token we emitted — clear it
+    #f
+    ;; Check if this keyword should set def-ctx for next symbol
+    (hash-ref *def-name-forms* tok #f)))
+
+;;; Classify a symbol token into a semantic token type.
+;;; def-ctx: #f or (token-type . modifiers) for definition name override.
+(def (classify-symbol-token name line col def-ctx)
   (let ((name-len (string-length name)))
     (cond
+      ;; Definition name override (e.g. after def, defstruct, etc.)
+      ((and def-ctx (not (hash-key? *gerbil-special-forms* name)))
+       (list line col name-len (car def-ctx) (cdr def-ctx)))
       ;; Keyword / special form
       ((hash-key? *gerbil-special-forms* name)
        (list line col name-len SemanticTokenType.keyword 0))

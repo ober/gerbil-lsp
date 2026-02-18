@@ -13,41 +13,48 @@
 
     ;; --- classify-symbol-token ---
     (test-case "classify-symbol-token: keyword"
-      (let ((tok (classify-symbol-token "def" 0 1)))
+      (let ((tok (classify-symbol-token "def" 0 1 #f)))
         (check (cadddr tok) => SemanticTokenType.keyword)))
 
     (test-case "classify-symbol-token: if keyword"
-      (let ((tok (classify-symbol-token "if" 0 1)))
+      (let ((tok (classify-symbol-token "if" 0 1 #f)))
         (check (cadddr tok) => SemanticTokenType.keyword)))
 
     (test-case "classify-symbol-token: import keyword"
-      (let ((tok (classify-symbol-token "import" 0 1)))
+      (let ((tok (classify-symbol-token "import" 0 1 #f)))
         (check (cadddr tok) => SemanticTokenType.keyword)))
 
     (test-case "classify-symbol-token: lambda keyword"
-      (let ((tok (classify-symbol-token "lambda" 0 1)))
+      (let ((tok (classify-symbol-token "lambda" 0 1 #f)))
         (check (cadddr tok) => SemanticTokenType.keyword)))
 
     (test-case "classify-symbol-token: regular variable"
-      (let ((tok (classify-symbol-token "my-var" 0 0)))
+      (let ((tok (classify-symbol-token "my-var" 0 0 #f)))
         (check (cadddr tok) => SemanticTokenType.variable)))
 
     (test-case "classify-symbol-token: make- constructor"
-      (let ((tok (classify-symbol-token "make-point" 0 0)))
+      (let ((tok (classify-symbol-token "make-point" 0 0 #f)))
         (check (cadddr tok) => SemanticTokenType.function)))
 
     (test-case "classify-symbol-token: type with ::t"
-      (let ((tok (classify-symbol-token "point::t" 0 0)))
+      (let ((tok (classify-symbol-token "point::t" 0 0 #f)))
         (check (cadddr tok) => SemanticTokenType.type)))
 
     (test-case "classify-symbol-token: keyword parameter ending with :"
-      (let ((tok (classify-symbol-token "name:" 0 0)))
+      (let ((tok (classify-symbol-token "name:" 0 0 #f)))
         (check (cadddr tok) => SemanticTokenType.parameter)))
 
     (test-case "classify-symbol-token: UPPERCASE constant"
-      (let ((tok (classify-symbol-token "MAX_SIZE" 0 0)))
+      (let ((tok (classify-symbol-token "MAX_SIZE" 0 0 #f)))
         (check (cadddr tok) => SemanticTokenType.variable)
         (check (car (cddddr tok)) => SemanticTokenModifier.readonly)))
+
+    (test-case "classify-symbol-token: def-ctx override"
+      ;; When def-ctx is set (e.g. after 'defstruct'), name gets type+mods
+      (let* ((ctx (cons SemanticTokenType.type SemanticTokenModifier.definition))
+             (tok (classify-symbol-token "point" 0 0 ctx)))
+        (check (cadddr tok) => SemanticTokenType.type)
+        (check (car (cddddr tok)) => SemanticTokenModifier.definition)))
 
     ;; --- all-uppercase? ---
     (test-case "all-uppercase?: YES"
@@ -68,18 +75,51 @@
     (test-case "all-uppercase?: single char"
       (check (all-uppercase? "x") => #f))
 
+    ;; --- dot-accessor-split ---
+    (test-case "dot-accessor-split: obj.method"
+      (let ((result (dot-accessor-split "obj.method")))
+        (check (pair? result) => #t)
+        (check (car result) => "obj")
+        (check (cdr result) => "method")))
+
+    (test-case "dot-accessor-split: no dot"
+      (check (dot-accessor-split "hello") => #f))
+
+    (test-case "dot-accessor-split: leading dot"
+      (check (dot-accessor-split ".foo") => #f))
+
+    (test-case "dot-accessor-split: trailing dot"
+      (check (dot-accessor-split "foo.") => #f))
+
     ;; --- tokenize-source ---
     (test-case "tokenize-source: empty string"
       (check-equal? (tokenize-source "") '()))
 
     (test-case "tokenize-source: simple def"
       (let ((tokens (tokenize-source "(def x 1)")))
-        ;; Should have exactly 3 tokens: def (keyword), x (variable), 1 (number)
+        ;; Should have exactly 3 tokens: def (keyword), x (function+def), 1 (number)
         (check (= (length tokens) 3) => #t)
         ;; Verify token types
         (check (cadddr (car tokens)) => SemanticTokenType.keyword)
-        (check (cadddr (cadr tokens)) => SemanticTokenType.variable)
+        ;; x after def gets function+definition context
+        (check (cadddr (cadr tokens)) => SemanticTokenType.function)
+        (check (car (cddddr (cadr tokens))) => SemanticTokenModifier.definition)
         (check (cadddr (caddr tokens)) => SemanticTokenType.number)))
+
+    (test-case "tokenize-source: defstruct name"
+      (let ((tokens (tokenize-source "(defstruct point x y)")))
+        ;; defstruct, point (type+def), x (variable), y (variable)
+        (check (>= (length tokens) 2) => #t)
+        (let ((name-tok (cadr tokens)))
+          (check (cadddr name-tok) => SemanticTokenType.type)
+          (check (car (cddddr name-tok)) => SemanticTokenModifier.definition))))
+
+    (test-case "tokenize-source: dot accessor"
+      (let ((tokens (tokenize-source "obj.method")))
+        ;; Should produce two tokens: obj (variable) and method (property)
+        (check (= (length tokens) 2) => #t)
+        (check (cadddr (car tokens)) => SemanticTokenType.variable)
+        (check (cadddr (cadr tokens)) => SemanticTokenType.property)))
 
     (test-case "tokenize-source: comment"
       (let ((tokens (tokenize-source "; a comment")))
