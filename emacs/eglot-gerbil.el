@@ -15,8 +15,8 @@
 ;;   - Call hierarchy (incoming/outgoing calls navigation)
 ;;   - Type hierarchy (supertypes/subtypes for structs & classes)
 ;;   - Selection range expansion/shrinking (structural selection)
-;;   - Custom commands (run test at point, show references)
-;;   - Semantic token faces tuned for Gerbil Scheme
+;;   - Custom commands (run test, show references, compile file, build project)
+;;   - Semantic token faces tuned for Gerbil Scheme (incl. property for obj.method)
 ;;   - Workspace symbol search with completion UI
 ;;   - Organize imports code action shortcut
 ;;   - Refactoring: extract to def, wrap in form, add export, cond↔if
@@ -123,9 +123,9 @@ during development to catch protocol conformance issues."
 ;; Semantic token faces
 ;; =====================================================================
 
-;; The server provides 10 token types and 2 modifiers:
+;; The server provides 11 token types and 2 modifiers:
 ;;   Types:     keyword, function, variable, parameter, type,
-;;              macro, comment, string, number, operator
+;;              macro, comment, string, number, operator, property
 ;;   Modifiers: definition, readonly
 
 (defface eglot-gerbil-keyword-face
@@ -178,6 +178,11 @@ during development to catch protocol conformance issues."
   "Face for Gerbil operators."
   :group 'eglot-gerbil)
 
+(defface eglot-gerbil-property-face
+  '((t :inherit font-lock-property-use-face))
+  "Face for Gerbil dot-accessor property names (obj.method)."
+  :group 'eglot-gerbil)
+
 (defface eglot-gerbil-definition-face
   '((t :inherit bold))
   "Face modifier for definitions."
@@ -198,7 +203,8 @@ during development to catch protocol conformance issues."
     ("comment"   . eglot-gerbil-comment-face)
     ("string"    . eglot-gerbil-string-face)
     ("number"    . eglot-gerbil-number-face)
-    ("operator"  . eglot-gerbil-operator-face))
+    ("operator"  . eglot-gerbil-operator-face)
+    ("property"  . eglot-gerbil-property-face))
   "Mapping from gerbil-lsp semantic token types to Emacs faces.")
 
 (defvar eglot-gerbil-semantic-token-modifier-faces
@@ -494,6 +500,37 @@ reporting results via window/showMessage."
                                           (plist-get pos :character))))))
 
 ;; =====================================================================
+;; Build / compile commands
+;; =====================================================================
+
+;;;###autoload
+(defun eglot-gerbil-compile-file ()
+  "Compile the current file with gxc via the gerbil-lsp server.
+Runs `gxc -S' on the file and reports results via window/showMessage."
+  (interactive)
+  (eglot-gerbil--ensure-server)
+  (unless buffer-file-name
+    (user-error "Buffer has no associated file"))
+  (jsonrpc-notify (eglot--current-server-or-lose)
+                  :workspace/executeCommand
+                  `(:command "gerbil-lsp.compileFile"
+                    :arguments ,(vector (eglot-gerbil--path-to-uri buffer-file-name)))))
+
+;;;###autoload
+(defun eglot-gerbil-build-project ()
+  "Build the Gerbil project containing the current file.
+Walks up to find build.ss or gerbil.pkg and runs `gerbil build'
+in that directory.  Results reported via window/showMessage."
+  (interactive)
+  (eglot-gerbil--ensure-server)
+  (unless buffer-file-name
+    (user-error "Buffer has no associated file"))
+  (jsonrpc-notify (eglot--current-server-or-lose)
+                  :workspace/executeCommand
+                  `(:command "gerbil-lsp.buildProject"
+                    :arguments ,(vector (eglot-gerbil--path-to-uri buffer-file-name)))))
+
+;; =====================================================================
 ;; Workspace symbol search with completion
 ;; =====================================================================
 
@@ -674,6 +711,9 @@ If the file does not exist, inserts a starter template."
     (define-key map (kbd "C-c l (") #'eglot-gerbil-wrap-in-form)
     (define-key map (kbd "C-c l e") #'eglot-gerbil-add-missing-export)
     (define-key map (kbd "C-c l C") #'eglot-gerbil-convert-conditional)
+    ;; Build / compile
+    (define-key map (kbd "C-c l b") #'eglot-gerbil-build-project)
+    (define-key map (kbd "C-c l B") #'eglot-gerbil-compile-file)
     ;; Project config
     (define-key map (kbd "C-c l p") #'eglot-gerbil-edit-project-config)
     ;; Standard Eglot commands on convenient keys
